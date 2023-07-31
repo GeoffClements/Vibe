@@ -1,0 +1,17 @@
+[package]
+name = "vibe"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.71"
+clap = { version = "4.3.19", features = ["derive"] }
+log = "0.4.19"
+slimproto = { path = "../slim-client-protocol-rs/slimproto", version = "0.1.5" }
+
+[dependencies.simple_logger]
+version = "4.2.0"
+default-features = false
+features = ["stderr", "colors"]

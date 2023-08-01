@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.71"
 clap = { version = "4.3.19", features = ["derive"] }
+crossbeam = "0.8.2"
+libpulse-binding = "2.28.1"
 log = "0.4.19"
 slimproto = { path = "../slim-client-protocol-rs/slimproto", version = "0.1.5" }
 

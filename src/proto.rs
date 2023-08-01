@@ -1,22 +1,33 @@
-use std::net::SocketAddrV4;
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    sync::{Arc, RwLock},
+};
 
-use slimproto::{self, discovery::discover, proto::Server};
+use crossbeam::channel::{Receiver, Sender};
+use log::error;
+use slimproto::{
+    self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage, FramedReader,
+    FramedWriter, ServerMessage,
+};
 
-pub fn run(server_addr: Option<SocketAddrV4>) {
+pub fn run(
+    server_addr: Option<SocketAddrV4>,
+    name: Arc<RwLock<String>>,
+    slim_rx_in: Sender<ServerMessage>,
+    slim_tx_out: Receiver<ClientMessage>,
+) {
     std::thread::spawn(move || {
         let mut server = match server_addr {
             Some(sock) => Server::from(sock),
-            None => {
-                match discover(None) {
-                    Ok(Some(server)) => server,
-                    _ => unreachable!(),
-                }
-            }
+            None => match discover(None) {
+                Ok(Some(server)) => server,
+                _ => unreachable!(),
+            },
         };
 
         slim_rx_in
             .send(ServerMessage::Serv {
-                ip_address: Ipv4Addr::from(server.ip_address),
+                ip_address: Ipv4Addr::from(*server.socket.ip()),
                 sync_group_id: None,
             })
             .ok();
@@ -24,14 +35,10 @@ pub fn run(server_addr: Option<SocketAddrV4>) {
         // Outer loop to reconnect to a different server and
         // update server details when a Serv message is received
         loop {
-            let name = match name_r.read() {
-                Ok(name) => name,
-                Err(_) => {
-                    return;
-                }
-            };
             let mut caps = Capabilities::default();
-            caps.add_name(&name);
+            if let Ok(name) = name.read() {
+                caps.add_name(&name);
+            }
             caps.add(Capability::Maxsamplerate(192000));
             caps.add(Capability::Pcm);
             caps.add(Capability::Mp3);
@@ -43,6 +50,7 @@ pub fn run(server_addr: Option<SocketAddrV4>) {
             let (mut rx, mut tx) = match server.clone().prepare(caps).connect() {
                 Ok((rx, tx)) => (rx, tx),
                 Err(_) => {
+                    error!("Error connecting to server");
                     return;
                 }
             };
@@ -61,6 +69,7 @@ pub fn run(server_addr: Option<SocketAddrV4>) {
 
             // Inner read loop
             while let Ok(msg) = rx.framed_read() {
+                // println!("{:?}", msg);
                 match msg {
                     // Request to change to another server
                     ServerMessage::Serv {

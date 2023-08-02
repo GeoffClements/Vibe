@@ -43,6 +43,7 @@ pub fn run(
             caps.add(Capability::Pcm);
             caps.add(Capability::Mp3);
             caps.add(Capability::Aac);
+            caps.add(Capability::Alc);
             caps.add(Capability::Ogg);
             caps.add(Capability::Flc);
 

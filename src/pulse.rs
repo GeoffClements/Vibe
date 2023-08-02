@@ -8,13 +8,13 @@ use libpulse_binding::{
     stream::{FlagSet as SmFlagSet, Stream},
 };
 
-pub fn setup() -> Result<(Rc<RefCell<Mainloop>>, Rc<RefCell<Context>>), PAErr> {
+pub fn setup() -> Result<(Mainloop, Context), PAErr> {
     let ml = Rc::new(RefCell::new(
         Mainloop::new().ok_or(pa::error::Code::ConnectionRefused)?,
     ));
 
     let cx = Rc::new(RefCell::new(
-        Context::new(ml.borrow_mut().deref(), "Slimproto_example")
+        Context::new(ml.borrow_mut().deref(), "Vibe")
             .ok_or(pa::error::Code::ConnectionRefused)?,
     ));
 
@@ -58,6 +58,11 @@ pub fn setup() -> Result<(Rc<RefCell<Mainloop>>, Rc<RefCell<Context>>), PAErr> {
 
     cx.borrow_mut().set_state_callback(None);
     ml.borrow_mut().unlock();
+
+    // Return the vanilla mainloop and context
+    // Unwraps are safe here as we know the Rc has content
+    let ml = Rc::into_inner(ml).unwrap().into_inner();
+    let cx = Rc::into_inner(cx).unwrap().into_inner();
 
     Ok((ml, cx))
 }

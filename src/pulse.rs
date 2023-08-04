@@ -8,14 +8,13 @@ use libpulse_binding::{
     stream::{FlagSet as SmFlagSet, Stream},
 };
 
-pub fn setup() -> Result<(Mainloop, Context), PAErr> {
+pub fn setup() -> Result<(Rc<RefCell<Mainloop>>, Rc<RefCell<Context>>), PAErr> {
     let ml = Rc::new(RefCell::new(
         Mainloop::new().ok_or(pa::error::Code::ConnectionRefused)?,
     ));
 
     let cx = Rc::new(RefCell::new(
-        Context::new(ml.borrow_mut().deref(), "Vibe")
-            .ok_or(pa::error::Code::ConnectionRefused)?,
+        Context::new(ml.borrow_mut().deref(), "Vibe").ok_or(pa::error::Code::ConnectionRefused)?,
     ));
 
     // Context state change callback
@@ -59,19 +58,13 @@ pub fn setup() -> Result<(Mainloop, Context), PAErr> {
     cx.borrow_mut().set_state_callback(None);
     ml.borrow_mut().unlock();
 
-    // Return the vanilla mainloop and context
-    // Unwraps are safe here as we know the Rc has content
-    let ml = Rc::into_inner(ml).unwrap().into_inner();
-    let cx = Rc::into_inner(cx).unwrap().into_inner();
-
     Ok((ml, cx))
 }
 
 pub fn connect_stream(
-    ml: &Rc<RefCell<Mainloop>>,
-    sm: &Rc<RefCell<Stream>>,
-    autostart: slimproto::proto::AutoStart,
-) -> Result<(), PAErr> {
+    ml: Rc<RefCell<Mainloop>>,
+    sm: Rc<RefCell<Stream>>,
+) -> Result<(   ), PAErr> {
     ml.borrow_mut().lock();
 
     // Stream state change callback
@@ -91,10 +84,7 @@ pub fn connect_stream(
         })));
     }
 
-    let mut flags = SmFlagSet::AUTO_TIMING_UPDATE;
-    if autostart != slimproto::proto::AutoStart::Auto {
-        flags |= SmFlagSet::START_CORKED;
-    }
+    let flags = SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::START_CORKED;
 
     sm.borrow_mut()
         .connect_playback(None, None, flags, None, None)?;

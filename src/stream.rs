@@ -98,13 +98,13 @@ impl StreamQueue {
     pub fn set_volume(&self, volume: &ChannelVolumes, cx: Rc<RefCell<Context>>) {
         if self.queue.len() > 0 {
             if let Some(device) = self.queue[0].borrow().get_device_index() {
-                let op = cx
+                let _op = cx
                     .borrow()
                     .introspect()
                     .set_sink_volume_by_index(device, volume, None);
-                while op.get_state() == pa::operation::State::Running {
-                    std::thread::sleep(Duration::from_millis(1));
-                }
+                // while op.get_state() == pa::operation::State::Running {
+                //     std::thread::sleep(Duration::from_millis(1));
+                // }
             }
         }
     }

@@ -1,11 +1,9 @@
 use std::{
-    borrow::BorrowMut,
     cell::RefCell,
-    io::Write,
-    net::{Ipv4Addr, SocketAddrV4, TcpStream},
+    net::{Ipv4Addr, SocketAddrV4},
     rc::Rc,
     str::FromStr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -17,30 +15,18 @@ use clap::{
 use crossbeam::{
     atomic::AtomicCell,
     channel::{bounded, Select, Sender},
-    select,
 };
 use libpulse_binding as pa;
-use log::{error, info, warn};
+use log::{info, warn};
 use pa::{
     context::Context,
     mainloop::threaded::Mainloop,
-    sample::Spec,
-    stream::Stream,
     volume::{ChannelVolumes, VolumeDB},
 };
 use simple_logger::SimpleLogger;
 use slimproto::{
-    buffer::SlimBuffer,
-    proto::{ClientMessage, PcmChannels, PcmSampleRate, ServerMessage, SLIM_PORT},
+    proto::{ClientMessage, ServerMessage, SLIM_PORT},
     status::{StatusCode, StatusData},
-};
-use symphonia::core::{
-    audio::RawSampleBuffer,
-    codecs::DecoderOptions,
-    formats::FormatOptions,
-    io::{MediaSourceStream, ReadOnlySource},
-    meta::MetadataOptions,
-    probe::Hint,
 };
 
 mod proto;
@@ -56,7 +42,7 @@ struct Cli {
     #[arg(short, help = "List output devices")]
     list: bool,
 
-    #[arg(short, default_value = "vibe", help = "Set the player name")]
+    #[arg(short, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
     #[arg(long,
@@ -79,6 +65,7 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
 
 pub enum PlayerMsg {
     EndOfDecode,
+    Drained,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -89,7 +76,7 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     // Create a pulse audio threaded main loop and context
-    let (ml, mut cx) = pulse::setup()?;
+    let (ml, cx) = pulse::setup()?;
 
     // List the output devices and terminate
     if cli.list {
@@ -140,7 +127,13 @@ fn main() -> anyhow::Result<()> {
             }
             op if op.index() == stream_idx => {
                 let msg = op.recv(&stream_out)?;
-                process_stream_msg(msg);
+                process_stream_msg(
+                    msg,
+                    status.clone(),
+                    slim_tx_in.clone(),
+                    &mut streams,
+                    stream_in.clone(),
+                );
             }
             _ => {}
         }
@@ -159,6 +152,7 @@ fn process_slim_msg(
     cx: Rc<RefCell<Context>>,
     streams: &mut stream::StreamQueue,
 ) -> anyhow::Result<()> {
+    // println!("{:?}", msg);
     match msg {
         ServerMessage::Serv { ip_address, .. } => {
             info!("Switching to server at {ip_address}");
@@ -181,16 +175,34 @@ fn process_slim_msg(
             info!("Setting volume to ({l},{r})");
             {
                 let vl = volume.get_mut();
-                vl[0] = VolumeDB(20.0 * l).into();
-                vl[1] = VolumeDB(20.0 * r).into();
+                vl[0] = VolumeDB(10.0 * l).into();
+                vl[1] = VolumeDB(10.0 * r).into();
             }
-            // TODO: now set volume for the current stream
+            streams.set_volume(volume, cx.clone());
         }
         ServerMessage::Status(ts) => {
-            info!("Received status tick from server with timestamp {:#?}", ts);
+            // info!("Received status tick from server with timestamp {:#?}", ts);
             if let Ok(mut status) = status.write() {
                 status.set_timestamp(ts);
                 let msg = status.make_status_message(StatusCode::Timer);
+                // info!("Sending status update");
+                slim_tx_in.send(msg).ok();
+            }
+        }
+        ServerMessage::Stop => {
+            info!("Stopping playback");
+            streams.stop();
+            if let Ok(status) = status.read() {
+                info!("Decoder ready for new stream");
+                let msg = status.make_status_message(StatusCode::DecoderReady);
+                slim_tx_in.send(msg).ok();
+            }
+        }
+        ServerMessage::Flush => {
+            info!("Flushing");
+            streams.flush();
+            if let Ok(status) = status.write() {
+                let msg = status.make_status_message(StatusCode::Flushed);
                 info!("Sending status update");
                 slim_tx_in.send(msg).ok();
             }
@@ -206,7 +218,7 @@ fn process_slim_msg(
             autostart,
             ..
         } => {
-            info!("Starting stream");
+            info!("Start stream command from server");
             if let Some(http_headers) = http_headers {
                 let num_crlf = http_headers.matches("\r\n").count();
 
@@ -257,8 +269,39 @@ fn process_slim_msg(
     Ok(())
 }
 
-fn process_stream_msg(msg: PlayerMsg) {
-    todo!();
+fn process_stream_msg(
+    msg: PlayerMsg,
+    status: Arc<RwLock<StatusData>>,
+    slim_tx_in: Sender<ClientMessage>,
+    streams: &mut stream::StreamQueue,
+    stream_in: Sender<PlayerMsg>,
+) {
+    match msg {
+        PlayerMsg::EndOfDecode => {
+            if streams.drain(stream_in) {
+                if let Ok(status) = status.read() {
+                    info!("Decoder ready for new stream");
+                    let msg = status.make_status_message(StatusCode::DecoderReady);
+                    slim_tx_in.send(msg).ok();
+                }
+            }
+        }
+        PlayerMsg::Drained => {
+            if streams.is_draining() {
+                info!("End of track");
+                if let Some(old_stream) = streams.shift() {
+                    if streams.uncork() {
+                        info!("Sending track started");
+                        if let Ok(status) = status.read() {
+                            let msg = status.make_status_message(StatusCode::TrackStarted);
+                            slim_tx_in.send(msg).ok();
+                        }
+                    }
+                    old_stream.borrow_mut().disconnect().ok();
+                }
+            }
+        }
+    }
 }
 
 fn print_output_devices(cx: Rc<RefCell<Context>>) {

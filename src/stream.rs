@@ -11,7 +11,9 @@ use std::{
 use crossbeam::channel::Sender;
 use libpulse_binding as pa;
 use log::{error, info};
-use pa::{context::Context, sample::Spec, stream::Stream};
+use pa::{
+    context::Context, operation::Operation, sample::Spec, stream::Stream, volume::ChannelVolumes,
+};
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
@@ -31,12 +33,14 @@ use crate::PlayerMsg;
 
 pub struct StreamQueue {
     queue: VecDeque<Rc<RefCell<Stream>>>,
+    draining: bool,
 }
 
 impl StreamQueue {
     pub fn new() -> Self {
         Self {
             queue: VecDeque::with_capacity(2),
+            draining: false,
         }
     }
 
@@ -52,15 +56,67 @@ impl StreamQueue {
     pub fn uncork(&mut self) -> bool {
         if self.queue.len() > 0 {
             let op = self.queue[0].borrow_mut().uncork(None);
-            std::thread::spawn(move || {
-                while op.get_state() == pa::operation::State::Running {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            });
-            true
-        } else {
-            false
+            self.do_op(op);
+            self.draining = false;
+            return true;
         }
+        false
+    }
+
+    pub fn drain(&mut self, stream_in: Sender<PlayerMsg>) -> bool {
+        if self.queue.len() > 0 && !self.draining {
+            self.draining = true;
+            let op = self.queue[0]
+                .borrow_mut()
+                .drain(Some(Box::new(move |success| {
+                    if success {
+                        stream_in.send(PlayerMsg::Drained).ok();
+                    }
+                })));
+            self.do_op(op);
+            return true;
+        }
+        false
+    }
+
+    pub fn flush(&self) {
+        if self.queue.len() > 0 {
+            let op = self.queue[0].borrow_mut().flush(None);
+            self.do_op(op);
+        }
+    }
+
+    pub fn stop(&mut self) {
+        self.flush();
+        while self.queue.len() > 0 {
+            if let Some(sm) = self.shift() {
+                sm.borrow_mut().disconnect().ok();
+            }
+        }
+    }
+
+    pub fn set_volume(&self, volume: &ChannelVolumes, cx: Rc<RefCell<Context>>) {
+        if self.queue.len() > 0 {
+            if let Some(device) = self.queue[0].borrow().get_device_index() {
+                let op = cx
+                    .borrow()
+                    .introspect()
+                    .set_sink_volume_by_index(device, volume, None);
+                self.do_op(op);
+            }
+        }
+    }
+
+    pub fn is_draining(&self) -> bool {
+        self.draining
+    }
+
+    fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
+        std::thread::spawn(move || {
+            while op.get_state() == pa::operation::State::Running {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
     }
 }
 
@@ -216,7 +272,11 @@ pub fn make_stream(
                     }
                     Err(e) => {
                         error!("Error reading data stream: {}", e);
-                        break;
+                        if let Ok(status) = status.read() {
+                            let msg = status.make_status_message(StatusCode::NotSupported);
+                            slim_tx.send(msg).ok();
+                        }
+                        return;
                     }
                 };
 
@@ -236,29 +296,16 @@ pub fn make_stream(
                 audio_buf.extend_from_slice(raw_buf.as_bytes());
             }
 
-            // Check for end of decoded data
-            if audio_buf.len() < len {
-                let sm_ref = sm_ref.clone();
-                let status = status.clone();
-                let slim_tx = slim_tx.clone();
-                unsafe {
-                    (*sm_ref.as_ptr()).drain(Some(Box::new(move |success| {
-                        if success {
-                            (*sm_ref.as_ptr()).disconnect().ok();
-                            if let Ok(status) = status.read() {
-                                let msg = status.make_status_message(StatusCode::DecoderReady);
-                                slim_tx.send(msg).ok();
-                            }
-                        }
-                    })));
-                }
-                return;
-            }
+            let buf_len = if audio_buf.len() < len {
+                audio_buf.len()
+            } else {
+                len
+            };
 
             unsafe {
                 (*sm_ref.as_ptr())
                     .write_copy(
-                        &audio_buf.drain(..len).collect::<Vec<u8>>(),
+                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
                         0,
                         pa::stream::SeekMode::Relative,
                     )

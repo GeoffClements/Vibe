@@ -21,7 +21,7 @@ use log::{info, warn};
 use pa::{
     context::Context,
     mainloop::threaded::Mainloop,
-    volume::{ChannelVolumes, VolumeDB},
+    volume::{ChannelVolumes, VolumeLinear},
 };
 use simple_logger::SimpleLogger;
 use slimproto::{
@@ -175,8 +175,8 @@ fn process_slim_msg(
             info!("Setting volume to ({l},{r})");
             {
                 let vl = volume.get_mut();
-                vl[0] = VolumeDB(10.0 * l).into();
-                vl[1] = VolumeDB(10.0 * r).into();
+                vl[0] = VolumeLinear(l).into();
+                vl[1] = VolumeLinear(r).into();
             }
             streams.set_volume(volume, cx.clone());
         }

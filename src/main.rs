@@ -34,7 +34,7 @@ mod pulse;
 mod stream;
 
 #[derive(Parser)]
-#[command(version)]
+#[command(author, version, about, long_about = None)]
 struct Cli {
     #[arg(short, name = "SERVER[:PORT]", value_parser = cli_server_parser, help = "Connect to the specified server, otherwise use autodiscovery")]
     server: Option<SocketAddrV4>,

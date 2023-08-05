@@ -2,8 +2,14 @@
 name = "vibe"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A music player for the Logitech Media Server"
+license = "MIT"
+repository = "https://github.com/GeoffClements/Vibe"
+homepage = "https://github.com/GeoffClements/Vibe"
+categories = ["command-line-utilities", "multimedia::audio"]
+keywords = ["audio", "slim", "music"]
+readme = "README.md"
+authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
 anyhow = "1.0.71"

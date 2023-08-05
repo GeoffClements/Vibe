@@ -66,6 +66,8 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
 pub enum PlayerMsg {
     EndOfDecode,
     Drained,
+    Pause,
+    Unpause,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -217,10 +219,17 @@ fn process_slim_msg(
                         slim_tx_in.send(msg).ok();
                     }
                 }
+            } else {
+                if streams.cork() {
+                    std::thread::spawn(move || {
+                        std::thread::sleep(interval);
+                        stream_in.send(PlayerMsg::Unpause).ok();
+                    });
+                }
             }
         }
         ServerMessage::Unpause(interval) => {
-            info!("Pause requested with interval {:?}", interval);
+            info!("Resume requested with interval {:?}", interval);
             if interval.is_zero() {
                 if streams.uncork() {
                     if let Ok(status) = status.read() {
@@ -228,6 +237,13 @@ fn process_slim_msg(
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
                     }
+                }
+            } else {
+                if streams.uncork() {
+                    std::thread::spawn(move || {
+                        std::thread::sleep(interval);
+                        stream_in.send(PlayerMsg::Pause).ok();
+                    });
                 }
             }
         }
@@ -314,6 +330,7 @@ fn process_stream_msg(
             if streams.is_draining() {
                 info!("End of track");
                 if let Some(old_stream) = streams.shift() {
+                    old_stream.borrow_mut().disconnect().ok();
                     if streams.uncork() {
                         info!("Sending track started");
                         if let Ok(status) = status.read() {
@@ -321,9 +338,14 @@ fn process_stream_msg(
                             slim_tx_in.send(msg).ok();
                         }
                     }
-                    old_stream.borrow_mut().disconnect().ok();
                 }
             }
+        }
+        PlayerMsg::Pause => {
+            streams.cork();
+        }
+        PlayerMsg::Unpause => {
+            streams.uncork();
         }
     }
 }

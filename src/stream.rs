@@ -53,12 +53,12 @@ impl StreamQueue {
         self.queue.pop_front()
     }
 
-    pub fn current_stream(&self) -> Option<Rc<RefCell<Stream>>> {
-        if self.queue.len() > 0 {
-            return Some(self.queue[0].clone());
-        }
-        None
-    }
+    // pub fn current_stream(&self) -> Option<Rc<RefCell<Stream>>> {
+    //     if self.queue.len() > 0 {
+    //         return Some(self.queue[0].clone());
+    //     }
+    //     None
+    // }
 
     pub fn cork(&mut self) -> bool {
         if self.queue.len() > 0 {

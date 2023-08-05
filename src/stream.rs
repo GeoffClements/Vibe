@@ -300,7 +300,7 @@ pub fn make_stream(
                 };
 
                 if decoded.frames() == 0 {
-                    break;
+                    continue;
                 }
 
                 let mut raw_buf =

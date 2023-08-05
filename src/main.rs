@@ -201,10 +201,34 @@ fn process_slim_msg(
         ServerMessage::Flush => {
             info!("Flushing");
             streams.flush();
-            if let Ok(status) = status.write() {
+            if let Ok(status) = status.read() {
                 let msg = status.make_status_message(StatusCode::Flushed);
                 info!("Sending status update");
                 slim_tx_in.send(msg).ok();
+            }
+        }
+        ServerMessage::Pause(interval) => {
+            info!("Pause requested with interval {:?}", interval);
+            if interval.is_zero() {
+                if streams.cork() {
+                    if let Ok(status) = status.read() {
+                        info!("Sending paused to server");
+                        let msg = status.make_status_message(StatusCode::Pause);
+                        slim_tx_in.send(msg).ok();
+                    }
+                }
+            }
+        }
+        ServerMessage::Unpause(interval) => {
+            info!("Pause requested with interval {:?}", interval);
+            if interval.is_zero() {
+                if streams.uncork() {
+                    if let Ok(status) = status.read() {
+                        info!("Sending resumed to server");
+                        let msg = status.make_status_message(StatusCode::Resume);
+                        slim_tx_in.send(msg).ok();
+                    }
+                }
             }
         }
         ServerMessage::Stream {
@@ -320,5 +344,9 @@ fn print_output_devices(cx: Rc<RefCell<Context>>) {
     while op.get_state() == pa::operation::State::Running {
         std::thread::sleep(Duration::from_millis(10));
     }
-    println!("Found {} devices", count.load());
+    print!("Found {} device", count.load());
+    if count.load() != 1 {
+        print!("s");
+    }
+    println!();
 }

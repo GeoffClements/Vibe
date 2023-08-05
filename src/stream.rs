@@ -53,6 +53,21 @@ impl StreamQueue {
         self.queue.pop_front()
     }
 
+    pub fn current_stream(&self) -> Option<Rc<RefCell<Stream>>> {
+        if self.queue.len() > 0 {
+            return Some(self.queue[0].clone());
+        }
+        None
+    }
+
+    pub fn cork(&mut self) -> bool {
+        if self.queue.len() > 0 {
+            self.queue[0].borrow_mut().cork(None);
+            return true;
+        }
+        false
+    }
+
     pub fn uncork(&mut self) -> bool {
         if self.queue.len() > 0 {
             let op = self.queue[0].borrow_mut().uncork(None);
@@ -102,9 +117,6 @@ impl StreamQueue {
                     .borrow()
                     .introspect()
                     .set_sink_volume_by_index(device, volume, None);
-                // while op.get_state() == pa::operation::State::Running {
-                //     std::thread::sleep(Duration::from_millis(1));
-                // }
             }
         }
     }

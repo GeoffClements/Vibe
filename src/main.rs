@@ -82,7 +82,7 @@ fn main() -> anyhow::Result<()> {
 
     // List the output devices and terminate
     if cli.list {
-        print_output_devices(cx.clone());
+        print_output_devices(ml.clone(), cx.clone());
         return Ok(());
     }
 
@@ -135,6 +135,7 @@ fn main() -> anyhow::Result<()> {
                     slim_tx_in.clone(),
                     &mut streams,
                     stream_in.clone(),
+                    ml.clone(),
                 );
             }
             _ => {}
@@ -180,7 +181,9 @@ fn process_slim_msg(
                 vl[0] = VolumeLinear(l).into();
                 vl[1] = VolumeLinear(r).into();
             }
+            ml.borrow_mut().lock();
             streams.set_volume(volume, cx.clone());
+            ml.borrow_mut().unlock();
         }
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
@@ -193,25 +196,30 @@ fn process_slim_msg(
         }
         ServerMessage::Stop => {
             info!("Stopping playback");
+            ml.borrow_mut().lock();
             streams.stop();
             if let Ok(status) = status.read() {
                 info!("Decoder ready for new stream");
                 let msg = status.make_status_message(StatusCode::DecoderReady);
                 slim_tx_in.send(msg).ok();
             }
+            ml.borrow_mut().unlock();
         }
         ServerMessage::Flush => {
             info!("Flushing");
+            ml.borrow_mut().lock();
             streams.flush();
             if let Ok(status) = status.read() {
                 let msg = status.make_status_message(StatusCode::Flushed);
                 info!("Sending status update");
                 slim_tx_in.send(msg).ok();
             }
+            ml.borrow_mut().unlock();
         }
         ServerMessage::Pause(interval) => {
             info!("Pause requested with interval {:?}", interval);
             if interval.is_zero() {
+                ml.borrow_mut().lock();
                 if streams.cork() {
                     if let Ok(status) = status.read() {
                         info!("Sending paused to server");
@@ -219,18 +227,22 @@ fn process_slim_msg(
                         slim_tx_in.send(msg).ok();
                     }
                 }
+                ml.borrow_mut().unlock();
             } else {
+                ml.borrow_mut().lock();
                 if streams.cork() {
                     std::thread::spawn(move || {
                         std::thread::sleep(interval);
                         stream_in.send(PlayerMsg::Unpause).ok();
                     });
                 }
+                ml.borrow_mut().unlock();
             }
         }
         ServerMessage::Unpause(interval) => {
             info!("Resume requested with interval {:?}", interval);
             if interval.is_zero() {
+                ml.borrow_mut().lock();
                 if streams.uncork() {
                     if let Ok(status) = status.read() {
                         info!("Sending resumed to server");
@@ -238,13 +250,16 @@ fn process_slim_msg(
                         slim_tx_in.send(msg).ok();
                     }
                 }
+                ml.borrow_mut().unlock();
             } else {
+                ml.borrow_mut().lock();
                 if streams.uncork() {
                     std::thread::spawn(move || {
                         std::thread::sleep(interval);
                         stream_in.send(PlayerMsg::Pause).ok();
                     });
                 }
+                ml.borrow_mut().unlock();
             }
         }
         ServerMessage::Stream {
@@ -287,6 +302,7 @@ fn process_slim_msg(
 
                         if streams.add(new_stream) {
                             if autostart == slimproto::proto::AutoStart::Auto {
+                                ml.borrow_mut().lock();
                                 if streams.uncork() {
                                     info!("Sending track started");
                                     if let Ok(status) = status.read() {
@@ -295,6 +311,7 @@ fn process_slim_msg(
                                         slim_tx_in.send(msg).ok();
                                     }
                                 }
+                                ml.borrow_mut().unlock();
                             }
                         }
                     }
@@ -315,9 +332,11 @@ fn process_stream_msg(
     slim_tx_in: Sender<ClientMessage>,
     streams: &mut stream::StreamQueue,
     stream_in: Sender<PlayerMsg>,
+    ml: Rc<RefCell<Mainloop>>,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
+            ml.borrow_mut().lock();
             if streams.drain(stream_in) {
                 if let Ok(status) = status.read() {
                     info!("Decoder ready for new stream");
@@ -325,11 +344,13 @@ fn process_stream_msg(
                     slim_tx_in.send(msg).ok();
                 }
             }
+            ml.borrow_mut().unlock();
         }
         PlayerMsg::Drained => {
             if streams.is_draining() {
                 info!("End of track");
                 if let Some(old_stream) = streams.shift() {
+                    ml.borrow_mut().lock();
                     old_stream.borrow_mut().disconnect().ok();
                     if streams.uncork() {
                         info!("Sending track started");
@@ -338,22 +359,28 @@ fn process_stream_msg(
                             slim_tx_in.send(msg).ok();
                         }
                     }
+                    ml.borrow_mut().unlock();
                 }
             }
         }
         PlayerMsg::Pause => {
+            ml.borrow_mut().lock();
             streams.cork();
+            ml.borrow_mut().unlock();
         }
         PlayerMsg::Unpause => {
+            ml.borrow_mut().lock();
             streams.uncork();
+            ml.borrow_mut().unlock();
         }
     }
 }
 
-fn print_output_devices(cx: Rc<RefCell<Context>>) {
+fn print_output_devices(ml: Rc<RefCell<Mainloop>>, cx: Rc<RefCell<Context>>) {
     println!("Output devices:");
     let count = Arc::new(AtomicCell::new(0usize));
     let count_ref = count.clone();
+    ml.borrow_mut().lock();
     let op = cx.borrow().introspect().get_sink_info_list(move |list| {
         if let libpulse_binding::callbacks::ListResult::Item(item) = list {
             if let Some(name) = &item.name {
@@ -362,6 +389,7 @@ fn print_output_devices(cx: Rc<RefCell<Context>>) {
             }
         }
     });
+    ml.borrow_mut().unlock();
 
     while op.get_state() == pa::operation::State::Running {
         std::thread::sleep(Duration::from_millis(10));

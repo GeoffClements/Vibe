@@ -1,5 +1,5 @@
 [package]
-name = "vibe"
+name = "Vibe_Player"
 version = "0.1.0"
 edition = "2021"
 description = "A music player for the Logitech Media Server"
@@ -24,3 +24,7 @@ symphonia = { version = "0.5.3", features = ["all-codecs"] }
 version = "4.2.0"
 default-features = false
 features = ["stderr", "colors"]
+
+[[bin]]
+name = "vibe"
+path = "src/main.rs"

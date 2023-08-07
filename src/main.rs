@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
     let status = Arc::new(RwLock::new(StatusData::default()));
     let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
     let name = Arc::new(RwLock::new(cli.name));
-    // let skip = Arc::new(AtomicCell::new(Duration::ZERO));
+    let skip = Arc::new(AtomicCell::new(Duration::ZERO));
     let (slim_tx_in, slim_tx_out) = bounded(1);
     let (slim_rx_in, slim_rx_out) = bounded(1);
     proto::run(
@@ -126,6 +126,7 @@ fn main() -> anyhow::Result<()> {
                     ml.clone(),
                     cx.clone(),
                     &mut streams,
+                    skip.clone(),
                 )?;
             }
             op if op.index() == stream_idx => {
@@ -155,6 +156,7 @@ fn process_slim_msg(
     ml: Rc<RefCell<Mainloop>>,
     cx: Rc<RefCell<Context>>,
     streams: &mut stream::StreamQueue,
+    skip: Arc<AtomicCell<Duration>>,
 ) -> anyhow::Result<()> {
     // println!("{:?}", msg);
     match msg {
@@ -196,12 +198,12 @@ fn process_slim_msg(
             }
         }
         ServerMessage::Stop => {
-            info!("Stopping playback");
+            info!("Stop playback received");
             ml.borrow_mut().lock();
             streams.stop();
             if let Ok(status) = status.read() {
-                info!("Decoder ready for new stream");
-                let msg = status.make_status_message(StatusCode::DecoderReady);
+                info!("Player flushed");
+                let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();
             }
             ml.borrow_mut().unlock();
@@ -211,8 +213,8 @@ fn process_slim_msg(
             ml.borrow_mut().lock();
             streams.flush();
             if let Ok(status) = status.read() {
+                info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
-                info!("Sending status update");
                 slim_tx_in.send(msg).ok();
             }
             ml.borrow_mut().unlock();
@@ -259,7 +261,9 @@ fn process_slim_msg(
                 });
             }
         }
-        // ServerMessage::Skip(dur) => {}
+        ServerMessage::Skip(interval) => {
+            skip.store(interval);
+        }
         ServerMessage::Stream {
             http_headers,
             server_ip,
@@ -293,6 +297,7 @@ fn process_slim_msg(
                         pcmsamplerate,
                         pcmchannels,
                         cx,
+                        skip,
                     )?;
 
                     if let Some(new_stream) = new_stream {

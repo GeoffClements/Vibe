@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crossbeam::channel::Sender;
+use crossbeam::{atomic::AtomicCell, channel::Sender};
 use libpulse_binding as pa;
 use log::{error, info};
 use pa::{
@@ -147,6 +147,7 @@ pub fn make_stream(
     pcmsamplerate: slimproto::proto::PcmSampleRate,
     pcmchannels: slimproto::proto::PcmChannels,
     cx: Rc<RefCell<Context>>,
+    skip: Arc<AtomicCell<Duration>>,
 ) -> anyhow::Result<Option<Rc<RefCell<Stream>>>> {
     // The LMS sends an ip of 0, 0, 0, 0 when it wants us to default to it
     let ip = if server_ip.is_unspecified() {
@@ -316,11 +317,19 @@ pub fn make_stream(
                 len
             };
 
+            let offset = match skip.take() {
+                dur if dur.is_zero() => 0i64,
+                dur => {
+                    let samples = dur.as_millis() as f64 * spec.rate as f64 / 1000.0;
+                    samples.round() as i64 * spec.channels as i64 * 4
+                }
+            };
+
             unsafe {
                 (*sm_ref.as_ptr())
                     .write_copy(
                         &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                        0,
+                        offset,
                         pa::stream::SeekMode::Relative,
                     )
                     .ok()

@@ -5,16 +5,16 @@ Vibe is a music player that uses the [SLIM TCP protocol][`slimtcp`] to
 connect to a [Logitech Media Server][`lms`].
 
 If you're looking for a well-tested, proven player then this is *not* it, 
-instead you need [squeezelite][`squeezelite`] which has a robust, well-
-maintained codebase and far more run-time and compile-time options than Vibe.
+instead you need [squeezelite][`squeezelite`] which has a robust, well-maintained
+codebase and far more run-time and compile-time options than Vibe.
 
 However, if you'd like to give Vibe a go then please do, it should be 
 considered as beta code and any real-world testing is welcome.
 
 Other than pulseaudio Vibe has zero run-time dependencies, all the stream
 demultiplexing and codec decoding is done natively thanks to 
-[Symphonia][`symphonia`], (a big thank-you to the Symphonia devs for their
-amazing work!).
+[Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
+amazing work!.
 
 ## What Vibe can do
 - Play Flac, AAC, Apple lossless, Ogg/Vorbis, MP3 and PCM streams

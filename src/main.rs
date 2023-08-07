@@ -90,6 +90,7 @@ fn main() -> anyhow::Result<()> {
     let status = Arc::new(RwLock::new(StatusData::default()));
     let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
     let name = Arc::new(RwLock::new(cli.name));
+    // let skip = Arc::new(AtomicCell::new(Duration::ZERO));
     let (slim_tx_in, slim_tx_out) = bounded(1);
     let (slim_rx_in, slim_rx_out) = bounded(1);
     proto::run(
@@ -252,16 +253,13 @@ fn process_slim_msg(
                 }
                 ml.borrow_mut().unlock();
             } else {
-                ml.borrow_mut().lock();
-                if streams.uncork() {
-                    std::thread::spawn(move || {
-                        std::thread::sleep(interval);
-                        stream_in.send(PlayerMsg::Pause).ok();
-                    });
-                }
-                ml.borrow_mut().unlock();
+                std::thread::spawn(move || {
+                    std::thread::sleep(interval);
+                    stream_in.send(PlayerMsg::Unpause).ok();
+                });
             }
         }
+        // ServerMessage::Skip(dur) => {}
         ServerMessage::Stream {
             http_headers,
             server_ip,

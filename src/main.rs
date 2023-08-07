@@ -262,6 +262,7 @@ fn process_slim_msg(
             }
         }
         ServerMessage::Skip(interval) => {
+            info!("Skip ahead: {:?}", interval);
             skip.store(interval);
         }
         ServerMessage::Stream {

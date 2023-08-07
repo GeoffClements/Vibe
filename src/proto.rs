@@ -32,6 +32,7 @@ pub fn run(
             })
             .ok();
 
+        let mut syncgroupid = String::new();
         // Outer loop to reconnect to a different server and
         // update server details when a Serv message is received
         loop {
@@ -40,6 +41,9 @@ pub fn run(
                 caps.add_name(&name);
             }
             caps.add(Capability::Maxsamplerate(192000));
+            if syncgroupid.len() > 0 {
+                caps.add(Capability::Syncgroupid(syncgroupid.to_owned()));
+            }
             caps.add(Capability::Pcm);
             caps.add(Capability::Mp3);
             caps.add(Capability::Aac);
@@ -77,6 +81,10 @@ pub fn run(
                         ip_address: ip,
                         sync_group_id: sgid,
                     } => {
+                        if let Some(ref sgid) = sgid {
+                            syncgroupid = sgid.to_owned();
+                        }
+                        
                         server = (ip, sgid).into();
                         // Now inform the main thread
                         slim_rx_in

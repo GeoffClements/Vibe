@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossbeam::channel::{Receiver, Sender};
-use log::error;
+use log::{error, info};
 use slimproto::{
     self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage, FramedReader,
     FramedWriter, ServerMessage,
@@ -42,6 +42,7 @@ pub fn run(
             }
             caps.add(Capability::Maxsamplerate(192000));
             if syncgroupid.len() > 0 {
+                info!("Joining sync group: {syncgroupid}");
                 caps.add(Capability::Syncgroupid(syncgroupid.to_owned()));
             }
             caps.add(Capability::Pcm);
@@ -84,7 +85,7 @@ pub fn run(
                         if let Some(ref sgid) = sgid {
                             syncgroupid = sgid.to_owned();
                         }
-                        
+
                         server = (ip, sgid).into();
                         // Now inform the main thread
                         slim_rx_in

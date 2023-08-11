@@ -3,7 +3,7 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4},
     rc::Rc,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Mutex},
     time::Duration,
 };
 
@@ -21,7 +21,6 @@ use log::{info, warn};
 use pa::{
     context::Context,
     mainloop::threaded::Mainloop,
-    volume::{ChannelVolumes, VolumeLinear},
 };
 use simple_logger::SimpleLogger;
 use slimproto::{
@@ -100,9 +99,9 @@ fn main() -> anyhow::Result<()> {
         slim_tx_out.clone(),
     );
 
-    // let gain = AtomicCell::new(1.0f32);
-    let mut volume = ChannelVolumes::default();
-    volume.set_len(2);
+    let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
+    // let mut volume = ChannelVolumes::default();
+    // volume.set_len(2);
 
     let mut streams = stream::StreamQueue::new();
     let (stream_in, stream_out) = bounded(1);
@@ -120,7 +119,7 @@ fn main() -> anyhow::Result<()> {
                     &mut server_default_ip,
                     name.clone(),
                     slim_tx_in.clone(),
-                    &mut volume,
+                    volume.clone(),
                     status.clone(),
                     stream_in.clone(),
                     ml.clone(),
@@ -150,7 +149,7 @@ fn process_slim_msg(
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
     slim_tx_in: Sender<ClientMessage>,
-    volume: &mut ChannelVolumes,
+    volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<RwLock<StatusData>>,
     stream_in: Sender<PlayerMsg>,
     ml: Rc<RefCell<Mainloop>>,
@@ -178,15 +177,19 @@ fn process_slim_msg(
             }
         }
         ServerMessage::Gain(l, r) => {
-            info!("Setting volume to ({l},{r})");
-            {
-                let vl = volume.get_mut();
-                vl[0] = VolumeLinear(l).into();
-                vl[1] = VolumeLinear(r).into();
+            info!("Setting volume to ({l}, {r})");
+            // {
+            //     let vl = volume.get_mut();
+            //     vl[0] = VolumeLinear(l).into();
+            //     vl[1] = VolumeLinear(r).into();
+            // }
+            // ml.borrow_mut().lock();
+            // streams.set_volume(volume, cx.clone());
+            // ml.borrow_mut().unlock();
+            if let Ok(mut vol) = volume.lock() {
+                vol[0] = l.sqrt() as f32;
+                vol[1] = r.sqrt() as f32;
             }
-            ml.borrow_mut().lock();
-            streams.set_volume(volume, cx.clone());
-            ml.borrow_mut().unlock();
         }
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
@@ -299,6 +302,7 @@ fn process_slim_msg(
                         pcmchannels,
                         cx,
                         skip,
+                        volume.clone(),
                     )?;
 
                     if let Some(new_stream) = new_stream {

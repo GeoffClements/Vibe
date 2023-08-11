@@ -4,7 +4,7 @@ use std::{
     io::Write,
     net::{Ipv4Addr, TcpStream},
     rc::Rc,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Mutex},
     time::Duration,
 };
 
@@ -12,7 +12,7 @@ use crossbeam::{atomic::AtomicCell, channel::Sender};
 use libpulse_binding as pa;
 use log::{error, info};
 use pa::{
-    context::Context, operation::Operation, sample::Spec, stream::Stream, volume::ChannelVolumes,
+    context::Context, operation::Operation, sample::Spec, stream::Stream,
 };
 use slimproto::{
     buffer::SlimBuffer,
@@ -21,7 +21,7 @@ use slimproto::{
     ClientMessage,
 };
 use symphonia::core::{
-    audio::RawSampleBuffer,
+    audio::{AsAudioBufferRef, RawSampleBuffer, Signal},
     codecs::DecoderOptions,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
@@ -110,16 +110,16 @@ impl StreamQueue {
         }
     }
 
-    pub fn set_volume(&self, volume: &ChannelVolumes, cx: Rc<RefCell<Context>>) {
-        if self.queue.len() > 0 {
-            if let Some(device) = self.queue[0].borrow().get_device_index() {
-                let _op = cx
-                    .borrow()
-                    .introspect()
-                    .set_sink_volume_by_index(device, volume, None);
-            }
-        }
-    }
+    // pub fn set_volume(&self, volume: &ChannelVolumes, cx: Rc<RefCell<Context>>) {
+    //     if self.queue.len() > 0 {
+    //         if let Some(device) = self.queue[0].borrow().get_device_index() {
+    //             let _op = cx
+    //                 .borrow()
+    //                 .introspect()
+    //                 .set_sink_volume_by_index(device, volume, None);
+    //         }
+    //     }
+    // }
 
     pub fn is_draining(&self) -> bool {
         self.draining
@@ -148,6 +148,7 @@ pub fn make_stream(
     pcmchannels: slimproto::proto::PcmChannels,
     cx: Rc<RefCell<Context>>,
     skip: Arc<AtomicCell<Duration>>,
+    volume: Arc<Mutex<Vec<f32>>>,
 ) -> anyhow::Result<Option<Rc<RefCell<Stream>>>> {
     // The LMS sends an ip of 0, 0, 0, 0 when it wants us to default to it
     let ip = if server_ip.is_unspecified() {
@@ -304,10 +305,25 @@ pub fn make_stream(
                     continue;
                 }
 
+                let mut sample_buf = decoded.make_equivalent::<f32>();
+                decoded.convert(&mut sample_buf);
+
+                let channel_n = sample_buf.spec().channels.count();
+                let mut chan = 0;
+                if let Ok(vol) = volume.lock() {
+                    while chan < channel_n {
+                        let chan_samples = sample_buf.chan_mut(chan);
+                        chan_samples.iter_mut().for_each(|s| {
+                            *s *= vol[chan % 2]
+                        });
+                        chan += 1;
+                    }
+                }
+
                 let mut raw_buf =
                     RawSampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
 
-                raw_buf.copy_interleaved_ref(decoded);
+                raw_buf.copy_interleaved_ref(sample_buf.as_audio_buffer_ref());
                 audio_buf.extend_from_slice(raw_buf.as_bytes());
             }
 

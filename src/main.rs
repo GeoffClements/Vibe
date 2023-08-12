@@ -38,7 +38,7 @@ struct Cli {
     #[arg(
         short = 'o',
         name = "OUTPUT_DEVICE",
-        help = "Output device, default is the system default device"
+        help = "Output device [default: System default device]"
     )]
     device: Option<String>,
 

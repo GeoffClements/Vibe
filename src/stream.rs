@@ -4,16 +4,14 @@ use std::{
     io::Write,
     net::{Ipv4Addr, TcpStream},
     rc::Rc,
-    sync::{Arc, RwLock, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 use libpulse_binding as pa;
 use log::{error, info};
-use pa::{
-    context::Context, operation::Operation, sample::Spec, stream::Stream,
-};
+use pa::{context::Context, operation::Operation, sample::Spec, stream::Stream};
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
@@ -308,15 +306,10 @@ pub fn make_stream(
                 let mut sample_buf = decoded.make_equivalent::<f32>();
                 decoded.convert(&mut sample_buf);
 
-                let channel_n = sample_buf.spec().channels.count();
-                let mut chan = 0;
                 if let Ok(vol) = volume.lock() {
-                    while chan < channel_n {
+                    for chan in 0..sample_buf.spec().channels.count() {
                         let chan_samples = sample_buf.chan_mut(chan);
-                        chan_samples.iter_mut().for_each(|s| {
-                            *s *= vol[chan % 2]
-                        });
-                        chan += 1;
+                        chan_samples.iter_mut().for_each(|s| *s *= vol[chan % 2]);
                     }
                 }
 

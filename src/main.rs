@@ -92,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     // Start the slim protocol threads
     let status = Arc::new(RwLock::new(StatusData::default()));
     let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
-    let name = Arc::new(RwLock::new((&cli.name).to_owned()));
+    let name = Arc::new(RwLock::new(cli.name.to_owned()));
     let skip = Arc::new(AtomicCell::new(Duration::ZERO));
     let (slim_tx_in, slim_tx_out) = bounded(1);
     let (slim_rx_in, slim_rx_out) = bounded(1);
@@ -202,7 +202,9 @@ fn process_slim_msg(
             info!("Stop playback received");
             ml.borrow_mut().lock();
             streams.stop();
-            if let Ok(status) = status.read() {
+            if let Ok(mut status) = status.write() {
+                status.set_elapsed_milli_seconds(0);
+                status.set_elapsed_seconds(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();
@@ -213,7 +215,9 @@ fn process_slim_msg(
             info!("Flushing");
             ml.borrow_mut().lock();
             streams.flush();
-            if let Ok(status) = status.read() {
+            if let Ok(mut status) = status.write() {
+                status.set_elapsed_milli_seconds(0);
+                status.set_elapsed_seconds(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();

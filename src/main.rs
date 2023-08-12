@@ -89,62 +89,67 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Start the slim protocol threads
-    let status = Arc::new(RwLock::new(StatusData::default()));
-    let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
-    let name = Arc::new(RwLock::new(cli.name.to_owned()));
-    let skip = Arc::new(AtomicCell::new(Duration::ZERO));
-    let (slim_tx_in, slim_tx_out) = bounded(1);
-    let (slim_rx_in, slim_rx_out) = bounded(1);
-    proto::run(
-        cli.server,
-        name.clone(),
-        slim_rx_in.clone(),
-        slim_tx_out.clone(),
-    );
-
-    let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
-    // let mut volume = ChannelVolumes::default();
-    // volume.set_len(2);
-
-    let mut streams = stream::StreamQueue::new();
-    let (stream_in, stream_out) = bounded(1);
-
-    let mut select = Select::new();
-    let slim_idx = select.recv(&slim_rx_out);
-    let stream_idx = select.recv(&stream_out);
-
     loop {
-        match select.select() {
-            op if op.index() == slim_idx => {
-                let msg = op.recv(&slim_rx_out)?;
-                process_slim_msg(
-                    msg,
-                    &mut server_default_ip,
-                    name.clone(),
-                    slim_tx_in.clone(),
-                    volume.clone(),
-                    status.clone(),
-                    stream_in.clone(),
-                    ml.clone(),
-                    cx.clone(),
-                    &mut streams,
-                    skip.clone(),
-                    &cli,
-                )?;
+        // Start the slim protocol threads
+        let status = Arc::new(RwLock::new(StatusData::default()));
+        let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
+        let name = Arc::new(RwLock::new(cli.name.to_owned()));
+        let skip = Arc::new(AtomicCell::new(Duration::ZERO));
+        let (slim_tx_in, slim_tx_out) = bounded(1);
+        let (slim_rx_in, slim_rx_out) = bounded(1);
+        proto::run(
+            cli.server,
+            name.clone(),
+            slim_rx_in.clone(),
+            slim_tx_out.clone(),
+        );
+
+        let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
+        // let mut volume = ChannelVolumes::default();
+        // volume.set_len(2);
+
+        let mut streams = stream::StreamQueue::new();
+        let (stream_in, stream_out) = bounded(1);
+
+        let mut select = Select::new();
+        let slim_idx = select.recv(&slim_rx_out);
+        let stream_idx = select.recv(&stream_out);
+
+        loop {
+            match select.select_timeout(Duration::from_secs(30)) {
+                Ok(op) if op.index() == slim_idx => {
+                    let msg = op.recv(&slim_rx_out)?;
+                    process_slim_msg(
+                        msg,
+                        &mut server_default_ip,
+                        name.clone(),
+                        slim_tx_in.clone(),
+                        volume.clone(),
+                        status.clone(),
+                        stream_in.clone(),
+                        ml.clone(),
+                        cx.clone(),
+                        &mut streams,
+                        skip.clone(),
+                        &cli,
+                    )?;
+                }
+                Ok(op) if op.index() == stream_idx => {
+                    let msg = op.recv(&stream_out)?;
+                    process_stream_msg(
+                        msg,
+                        status.clone(),
+                        slim_tx_in.clone(),
+                        &mut streams,
+                        stream_in.clone(),
+                        ml.clone(),
+                    );
+                }
+                Ok(_) => {}
+                Err(_) => {
+                    break;
+                }
             }
-            op if op.index() == stream_idx => {
-                let msg = op.recv(&stream_out)?;
-                process_stream_msg(
-                    msg,
-                    status.clone(),
-                    slim_tx_in.clone(),
-                    &mut streams,
-                    stream_in.clone(),
-                    ml.clone(),
-                );
-            }
-            _ => {}
         }
     }
 }

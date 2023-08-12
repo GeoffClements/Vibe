@@ -3,7 +3,7 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4},
     rc::Rc,
     str::FromStr,
-    sync::{Arc, RwLock, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
@@ -18,10 +18,7 @@ use crossbeam::{
 };
 use libpulse_binding as pa;
 use log::{info, warn};
-use pa::{
-    context::Context,
-    mainloop::threaded::Mainloop,
-};
+use pa::{context::Context, mainloop::threaded::Mainloop};
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, ServerMessage, SLIM_PORT},
@@ -33,10 +30,17 @@ mod pulse;
 mod stream;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(name = "Vibe", author, version, about, long_about = None)]
 struct Cli {
     #[arg(short, name = "SERVER[:PORT]", value_parser = cli_server_parser, help = "Connect to the specified server, otherwise use autodiscovery")]
     server: Option<SocketAddrV4>,
+
+    #[arg(
+        short = 'o',
+        name = "OUTPUT_DEVICE",
+        help = "Output device, default is the system default device"
+    )]
+    device: Option<String>,
 
     #[arg(short, help = "List output devices")]
     list: bool,
@@ -88,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     // Start the slim protocol threads
     let status = Arc::new(RwLock::new(StatusData::default()));
     let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
-    let name = Arc::new(RwLock::new(cli.name));
+    let name = Arc::new(RwLock::new((&cli.name).to_owned()));
     let skip = Arc::new(AtomicCell::new(Duration::ZERO));
     let (slim_tx_in, slim_tx_out) = bounded(1);
     let (slim_rx_in, slim_rx_out) = bounded(1);
@@ -126,6 +130,7 @@ fn main() -> anyhow::Result<()> {
                     cx.clone(),
                     &mut streams,
                     skip.clone(),
+                    &cli,
                 )?;
             }
             op if op.index() == stream_idx => {
@@ -156,6 +161,7 @@ fn process_slim_msg(
     cx: Rc<RefCell<Context>>,
     streams: &mut stream::StreamQueue,
     skip: Arc<AtomicCell<Duration>>,
+    cli: &Cli,
 ) -> anyhow::Result<()> {
     // println!("{:?}", msg);
     match msg {
@@ -178,14 +184,6 @@ fn process_slim_msg(
         }
         ServerMessage::Gain(l, r) => {
             info!("Setting volume to ({l}, {r})");
-            // {
-            //     let vl = volume.get_mut();
-            //     vl[0] = VolumeLinear(l).into();
-            //     vl[1] = VolumeLinear(r).into();
-            // }
-            // ml.borrow_mut().lock();
-            // streams.set_volume(volume, cx.clone());
-            // ml.borrow_mut().unlock();
             if let Ok(mut vol) = volume.lock() {
                 vol[0] = l.sqrt() as f32;
                 vol[1] = r.sqrt() as f32;
@@ -306,7 +304,7 @@ fn process_slim_msg(
                     )?;
 
                     if let Some(new_stream) = new_stream {
-                        pulse::connect_stream(ml.clone(), new_stream.clone())?;
+                        pulse::connect_stream(ml.clone(), new_stream.clone(), &cli.device)?;
 
                         if streams.add(new_stream) {
                             if autostart == slimproto::proto::AutoStart::Auto {

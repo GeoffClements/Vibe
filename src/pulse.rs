@@ -64,7 +64,8 @@ pub fn setup() -> Result<(Rc<RefCell<Mainloop>>, Rc<RefCell<Context>>), PAErr> {
 pub fn connect_stream(
     ml: Rc<RefCell<Mainloop>>,
     sm: Rc<RefCell<Stream>>,
-) -> Result<(   ), PAErr> {
+    device: &Option<String>,
+) -> Result<(), PAErr> {
     ml.borrow_mut().lock();
 
     // Stream state change callback
@@ -87,7 +88,7 @@ pub fn connect_stream(
     let flags = SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::START_CORKED;
 
     sm.borrow_mut()
-        .connect_playback(None, None, flags, None, None)?;
+        .connect_playback(device.as_deref(), None, flags, None, None)?;
 
     // Wait for stream to be ready
     loop {

@@ -21,6 +21,8 @@ amazing work!.
 - Gapless playback
 - Stop, play, pause and resume
 - Volume control
+- Select output device
+- Choose the name of the player
 - Play some radio streams
 
 ## What Vibe can't do

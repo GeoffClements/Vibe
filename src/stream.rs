@@ -273,9 +273,9 @@ pub fn make_stream(
         symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
 
     // Create an audio buffer to hold raw u8 samples
-    let mut audio_buf = Vec::new();
     let threshold_samples =
-        output_threshold.as_millis() * 1000 * channels as u128 * 4 / sample_rate as u128;
+        (output_threshold.as_millis() * channels as u128 * sample_rate as u128 / 1000) * 4;
+    let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
 
     // Prefill audio buffer to threshold
     match fill_buf(

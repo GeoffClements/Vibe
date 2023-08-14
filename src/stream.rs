@@ -256,6 +256,7 @@ pub fn make_stream(
         symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
 
     let mut audio_buf = Vec::with_capacity(8 * 1024);
+    let mut threshold = false;
 
     // Add callback to pa_stream to feed music
     let status_ref = status.clone();
@@ -290,6 +291,15 @@ pub fn make_stream(
 
                 if decoded.frames() == 0 {
                     continue;
+                }
+
+                if !threshold {
+                    if let Ok(status) = status.read() {
+                        info!("Sending buffer threshold reached");
+                        let msg = status.make_status_message(StatusCode::BufferThreshold);
+                        slim_tx.send(msg).ok();
+                    }
+                    threshold = true;
                 }
 
                 let mut sample_buf = decoded.make_equivalent::<f32>();

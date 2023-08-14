@@ -147,6 +147,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 Ok(_) => {}
                 Err(_) => {
+                    info!("Lost contact with server, resetting");
                     break;
                 }
             }
@@ -265,9 +266,19 @@ fn process_slim_msg(
                 }
                 ml.borrow_mut().unlock();
             } else {
+                let dur = match status.read() {
+                    Ok(status) => interval.saturating_sub(status.get_jiffies()),
+                    Err(_) => Duration::ZERO,
+                };
+
                 std::thread::spawn(move || {
-                    std::thread::sleep(interval);
+                    std::thread::sleep(dur);
                     stream_in.send(PlayerMsg::Unpause).ok();
+                    if let Ok(status) = status.read() {
+                        info!("Sending resumed to server");
+                        let msg = status.make_status_message(StatusCode::Resume);
+                        slim_tx_in.send(msg).ok();
+                    }
                 });
             }
         }

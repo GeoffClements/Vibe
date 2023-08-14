@@ -295,6 +295,7 @@ fn process_slim_msg(
             pcmsamplerate,
             pcmchannels,
             autostart,
+            output_threshold,
             ..
         } => {
             info!("Start stream command from server");
@@ -321,6 +322,7 @@ fn process_slim_msg(
                         cx,
                         skip,
                         volume.clone(),
+                        output_threshold,
                     )?;
 
                     if let Some(new_stream) = new_stream {

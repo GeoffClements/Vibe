@@ -20,11 +20,11 @@ use slimproto::{
 };
 use symphonia::core::{
     audio::{AsAudioBufferRef, RawSampleBuffer, Signal},
-    codecs::DecoderOptions,
+    codecs::{Decoder, DecoderOptions},
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
-    probe::Hint,
+    probe::{Hint, ProbeResult},
 };
 
 use crate::PlayerMsg;
@@ -33,6 +33,22 @@ pub struct StreamQueue {
     queue: VecDeque<Rc<RefCell<Stream>>>,
     draining: bool,
 }
+#[derive(std::fmt::Debug)]
+enum DecoderError {
+    EndOfDecode,
+    StreamError(symphonia::core::errors::Error),
+}
+
+impl std::fmt::Display for DecoderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecoderError::EndOfDecode => write!(f, "End of decode stream"),
+            DecoderError::StreamError(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for DecoderError {}
 
 impl StreamQueue {
     pub fn new() -> Self {
@@ -136,6 +152,7 @@ pub fn make_stream(
     cx: Rc<RefCell<Context>>,
     skip: Arc<AtomicCell<Duration>>,
     volume: Arc<Mutex<Vec<f32>>>,
+    output_threshold: Duration,
 ) -> anyhow::Result<Option<Rc<RefCell<Stream>>>> {
     // The LMS sends an ip of 0, 0, 0, 0 when it wants us to default to it
     let ip = if server_ip.is_unspecified() {
@@ -255,8 +272,40 @@ pub fn make_stream(
     let mut decoder =
         symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
 
-    let mut audio_buf = Vec::with_capacity(8 * 1024);
-    let mut threshold = false;
+    // Create an audio buffer to hold raw u8 samples
+    let mut audio_buf = Vec::new();
+    let threshold_samples =
+        output_threshold.as_millis() * 1000 * channels as u128 * 4 / sample_rate as u128;
+
+    // Prefill audio buffer to threshold
+    match fill_buf(
+        &mut audio_buf,
+        threshold_samples as usize,
+        &mut probed,
+        &mut decoder,
+        volume.clone(),
+    ) {
+        Ok(()) => {}
+        Err(DecoderError::EndOfDecode) => {
+            stream_in.send(PlayerMsg::EndOfDecode).ok();
+        }
+        Err(DecoderError::StreamError(e)) => {
+            error!("Error reading data stream: {}", e);
+            if let Ok(status) = status.read() {
+                let msg = status.make_status_message(StatusCode::NotSupported);
+                slim_tx.send(msg).ok();
+            }
+            return Err(e.into());
+        }
+    }
+
+    if audio_buf.len() >= threshold_samples as usize {
+        info!("Sending output buffer threshold reached");
+        if let Ok(status) = status.read() {
+            let msg = status.make_status_message(StatusCode::BufferThreshold);
+            slim_tx.send(msg).ok();
+        }
+    }
 
     // Add callback to pa_stream to feed music
     let status_ref = status.clone();
@@ -264,59 +313,25 @@ pub fn make_stream(
     (*pa_stream)
         .borrow_mut()
         .set_write_callback(Some(Box::new(move |len| {
-            while audio_buf.len() < len {
-                let packet = match probed.format.next_packet() {
-                    Ok(packet) => packet,
-                    Err(symphonia::core::errors::Error::IoError(err))
-                        if err.kind() == std::io::ErrorKind::UnexpectedEof
-                            && err.to_string() == "end of stream" =>
-                    {
-                        stream_in.send(PlayerMsg::EndOfDecode).ok();
-                        break;
-                    }
-                    Err(e) => {
-                        error!("Error reading data stream: {}", e);
-                        if let Ok(status) = status.read() {
-                            let msg = status.make_status_message(StatusCode::NotSupported);
-                            slim_tx.send(msg).ok();
-                        }
-                        return;
-                    }
-                };
-
-                let decoded = match decoder.decode(&packet) {
-                    Ok(decoded) => decoded,
-                    Err(_) => break,
-                };
-
-                if decoded.frames() == 0 {
-                    continue;
+            match fill_buf(
+                &mut audio_buf,
+                len,
+                &mut probed,
+                &mut decoder,
+                volume.clone(),
+            ) {
+                Ok(()) => {}
+                Err(DecoderError::EndOfDecode) => {
+                    stream_in.send(PlayerMsg::EndOfDecode).ok();
                 }
-
-                if !threshold {
+                Err(DecoderError::StreamError(e)) => {
+                    error!("Error reading data stream: {}", e);
                     if let Ok(status) = status.read() {
-                        info!("Sending buffer threshold reached");
-                        let msg = status.make_status_message(StatusCode::BufferThreshold);
+                        let msg = status.make_status_message(StatusCode::NotSupported);
                         slim_tx.send(msg).ok();
                     }
-                    threshold = true;
+                    return;
                 }
-
-                let mut sample_buf = decoded.make_equivalent::<f32>();
-                decoded.convert(&mut sample_buf);
-
-                if let Ok(vol) = volume.lock() {
-                    for chan in 0..sample_buf.spec().channels.count() {
-                        let chan_samples = sample_buf.chan_mut(chan);
-                        chan_samples.iter_mut().for_each(|s| *s *= vol[chan % 2]);
-                    }
-                }
-
-                let mut raw_buf =
-                    RawSampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-
-                raw_buf.copy_interleaved_ref(sample_buf.as_audio_buffer_ref());
-                audio_buf.extend_from_slice(raw_buf.as_bytes());
             }
 
             let buf_len = if audio_buf.len() < len {
@@ -354,4 +369,52 @@ pub fn make_stream(
         })));
 
     Ok(Some(pa_stream))
+}
+
+fn fill_buf(
+    buffer: &mut Vec<u8>,
+    limit: usize,
+    probed: &mut ProbeResult,
+    decoder: &mut Box<dyn Decoder>,
+    volume: Arc<Mutex<Vec<f32>>>,
+) -> Result<(), DecoderError> {
+    while buffer.len() < limit {
+        let packet = match probed.format.next_packet() {
+            Ok(packet) => packet,
+            Err(symphonia::core::errors::Error::IoError(err))
+                if err.kind() == std::io::ErrorKind::UnexpectedEof
+                    && err.to_string() == "end of stream" =>
+            {
+                return Err(DecoderError::EndOfDecode);
+            }
+            Err(e) => {
+                return Err(DecoderError::StreamError(e));
+            }
+        };
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(_) => continue,
+        };
+
+        if decoded.frames() == 0 {
+            continue;
+        }
+
+        let mut sample_buf = decoded.make_equivalent::<f32>();
+        decoded.convert(&mut sample_buf);
+
+        if let Ok(vol) = volume.lock() {
+            for chan in 0..sample_buf.spec().channels.count() {
+                let chan_samples = sample_buf.chan_mut(chan);
+                chan_samples.iter_mut().for_each(|s| *s *= vol[chan % 2]);
+            }
+        }
+
+        let mut raw_buf = RawSampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+
+        raw_buf.copy_interleaved_ref(sample_buf.as_audio_buffer_ref());
+        buffer.extend_from_slice(raw_buf.as_bytes());
+    }
+    Ok(())
 }

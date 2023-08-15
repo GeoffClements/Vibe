@@ -96,8 +96,8 @@ fn main() -> anyhow::Result<()> {
         let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
         let name = Arc::new(RwLock::new(cli.name.to_owned()));
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
-        let (slim_tx_in, slim_tx_out) = bounded(2);
-        let (slim_rx_in, slim_rx_out) = bounded(2);
+        let (slim_tx_in, slim_tx_out) = bounded(1);
+        let (slim_rx_in, slim_rx_out) = bounded(1);
         proto::run(
             cli.server,
             name.clone(),

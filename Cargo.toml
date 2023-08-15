@@ -17,7 +17,8 @@ clap = { version = "4.3.19", features = ["derive"] }
 crossbeam = "0.8.2"
 libpulse-binding = "2.28.1"
 log = "0.4.19"
-slimproto = "0.1.12"
+# slimproto = "0.1.12"
+slimproto = { version = "*", path = "../slim-client-protocol-rs/slimproto" }
 symphonia = { version = "0.5.3", features = ["all-codecs"] }
 
 [dependencies.simple_logger]

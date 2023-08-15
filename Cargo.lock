@@ -484,8 +484,6 @@ dependencies = [
 [[package]]
 name = "slimproto"
 version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24094316f10f7b9c6e3f6b8e5493d187d6757b7deeb92b347fe7fbf0b820938b"
 dependencies = [
  "bitflags 2.4.0",
  "bytes",

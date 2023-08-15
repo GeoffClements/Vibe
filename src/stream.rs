@@ -371,6 +371,9 @@ pub fn make_stream(
                     .ok()
             };
 
+            unsafe {
+                (*sm_ref.as_ptr()).update_timing_info(None);
+            }
             if let Ok(Some(stream_time)) = unsafe { (*sm_ref.as_ptr()).get_time() } {
                 if let Ok(mut status) = status_ref.lock() {
                     status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);

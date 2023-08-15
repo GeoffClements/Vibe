@@ -85,7 +85,7 @@ pub fn connect_stream(
         })));
     }
 
-    let flags = SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::START_CORKED;
+    let flags = SmFlagSet::START_CORKED;
 
     sm.borrow_mut()
         .connect_playback(device.as_deref(), None, flags, None, None)?;

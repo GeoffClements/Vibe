@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
 
     loop {
         // Start the slim protocol threads
-        let status = Arc::new(RwLock::new(StatusData::default()));
+        let status = Arc::new(Mutex::new(StatusData::default()));
         let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
         let name = Arc::new(RwLock::new(cli.name.to_owned()));
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
@@ -161,7 +161,7 @@ fn process_slim_msg(
     name: Arc<RwLock<String>>,
     slim_tx_in: Sender<ClientMessage>,
     volume: Arc<Mutex<Vec<f32>>>,
-    status: Arc<RwLock<StatusData>>,
+    status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
     ml: Rc<RefCell<Mainloop>>,
     cx: Rc<RefCell<Context>>,
@@ -197,10 +197,10 @@ fn process_slim_msg(
         }
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
-            if let Ok(mut status) = status.write() {
+            if let Ok(mut status) = status.lock() {
+                // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
                 status.set_timestamp(ts);
                 let msg = status.make_status_message(StatusCode::Timer);
-                // info!("Sending status update");
                 slim_tx_in.send(msg).ok();
             }
         }
@@ -208,7 +208,7 @@ fn process_slim_msg(
             info!("Stop playback received");
             ml.borrow_mut().lock();
             streams.stop();
-            if let Ok(mut status) = status.write() {
+            if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 info!("Player flushed");
@@ -221,7 +221,7 @@ fn process_slim_msg(
             info!("Flushing");
             ml.borrow_mut().lock();
             streams.flush();
-            if let Ok(mut status) = status.write() {
+            if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 info!("Player flushed");
@@ -235,7 +235,7 @@ fn process_slim_msg(
             if interval.is_zero() {
                 ml.borrow_mut().lock();
                 if streams.cork() {
-                    if let Ok(status) = status.read() {
+                    if let Ok(mut status) = status.lock() {
                         info!("Sending paused to server");
                         let msg = status.make_status_message(StatusCode::Pause);
                         slim_tx_in.send(msg).ok();
@@ -258,23 +258,33 @@ fn process_slim_msg(
             if interval.is_zero() {
                 ml.borrow_mut().lock();
                 if streams.uncork() {
-                    if let Ok(status) = status.read() {
+                    if let Ok(mut status) = status.lock() {
                         info!("Sending resumed to server");
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
                     }
+
+                    if streams.is_buffering() {
+                        info!("Sending track started");
+                        if let Ok(mut status) = status.lock() {
+                            let msg = status.make_status_message(StatusCode::TrackStarted);
+                            slim_tx_in.send(msg).ok();
+                        }
+                        streams.set_buffering(false);
+                    }
                 }
                 ml.borrow_mut().unlock();
             } else {
-                let dur = match status.read() {
+                let dur = match status.lock() {
                     Ok(status) => interval.saturating_sub(status.get_jiffies()),
                     Err(_) => Duration::ZERO,
                 };
 
+                info!("Resuming in {:?}", dur);
                 std::thread::spawn(move || {
                     std::thread::sleep(dur);
                     stream_in.send(PlayerMsg::Unpause).ok();
-                    if let Ok(status) = status.read() {
+                    if let Ok(mut status) = status.lock() {
                         info!("Sending resumed to server");
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
@@ -303,7 +313,7 @@ fn process_slim_msg(
                 let num_crlf = http_headers.matches("\r\n").count();
 
                 if num_crlf > 0 {
-                    if let Ok(mut status) = status.write() {
+                    if let Ok(mut status) = status.lock() {
                         status.add_crlf(num_crlf as u8);
                     }
 
@@ -333,11 +343,12 @@ fn process_slim_msg(
                                 ml.borrow_mut().lock();
                                 if streams.uncork() {
                                     info!("Sending track started");
-                                    if let Ok(status) = status.read() {
+                                    if let Ok(mut status) = status.lock() {
                                         let msg =
                                             status.make_status_message(StatusCode::TrackStarted);
                                         slim_tx_in.send(msg).ok();
                                     }
+                                    streams.set_buffering(false);
                                 }
                                 ml.borrow_mut().unlock();
                             }
@@ -356,7 +367,7 @@ fn process_slim_msg(
 
 fn process_stream_msg(
     msg: PlayerMsg,
-    status: Arc<RwLock<StatusData>>,
+    status: Arc<Mutex<StatusData>>,
     slim_tx_in: Sender<ClientMessage>,
     streams: &mut stream::StreamQueue,
     stream_in: Sender<PlayerMsg>,
@@ -366,7 +377,7 @@ fn process_stream_msg(
         PlayerMsg::EndOfDecode => {
             ml.borrow_mut().lock();
             if streams.drain(stream_in) {
-                if let Ok(status) = status.read() {
+                if let Ok(mut status) = status.lock() {
                     info!("Decoder ready for new stream");
                     let msg = status.make_status_message(StatusCode::DecoderReady);
                     slim_tx_in.send(msg).ok();
@@ -382,7 +393,7 @@ fn process_stream_msg(
                     old_stream.borrow_mut().disconnect().ok();
                     if streams.uncork() {
                         info!("Sending track started");
-                        if let Ok(status) = status.read() {
+                        if let Ok(mut status) = status.lock() {
                             let msg = status.make_status_message(StatusCode::TrackStarted);
                             slim_tx_in.send(msg).ok();
                         }
@@ -400,6 +411,14 @@ fn process_stream_msg(
             ml.borrow_mut().lock();
             streams.uncork();
             ml.borrow_mut().unlock();
+            if streams.is_buffering() {
+                info!("Sending track started");
+                if let Ok(mut status) = status.lock() {
+                    let msg = status.make_status_message(StatusCode::TrackStarted);
+                    slim_tx_in.send(msg).ok();
+                }
+            }
+            streams.set_buffering(false);
         }
     }
 }

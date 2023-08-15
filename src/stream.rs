@@ -4,7 +4,7 @@ use std::{
     io::Write,
     net::{Ipv4Addr, TcpStream},
     rc::Rc,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -29,10 +29,6 @@ use symphonia::core::{
 
 use crate::PlayerMsg;
 
-pub struct StreamQueue {
-    queue: VecDeque<Rc<RefCell<Stream>>>,
-    draining: bool,
-}
 #[derive(std::fmt::Debug)]
 enum DecoderError {
     EndOfDecode,
@@ -50,11 +46,18 @@ impl std::fmt::Display for DecoderError {
 
 impl std::error::Error for DecoderError {}
 
+pub struct StreamQueue {
+    queue: VecDeque<Rc<RefCell<Stream>>>,
+    draining: bool,
+    buffering: bool,
+}
+
 impl StreamQueue {
     pub fn new() -> Self {
         Self {
             queue: VecDeque::with_capacity(2),
             draining: false,
+            buffering: true,
         }
     }
 
@@ -128,6 +131,14 @@ impl StreamQueue {
         self.draining
     }
 
+    pub fn is_buffering(&self) -> bool {
+        self.buffering
+    }
+
+    pub fn set_buffering(&mut self, buffering: bool) {
+        self.buffering = buffering;
+    }
+
     fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
         std::thread::spawn(move || {
             while op.get_state() == pa::operation::State::Running {
@@ -142,7 +153,7 @@ pub fn make_stream(
     default_ip: &Ipv4Addr,
     server_port: u16,
     http_headers: String,
-    status: Arc<RwLock<StatusData>>,
+    status: Arc<Mutex<StatusData>>,
     slim_tx: Sender<ClientMessage>,
     stream_in: Sender<PlayerMsg>,
     threshold: u32,
@@ -165,17 +176,27 @@ pub fn make_stream(
     data_stream.write(http_headers.as_bytes())?;
     data_stream.flush()?;
 
-    if let Ok(status) = status.read() {
+    if let Ok(mut status) = status.lock() {
         info!("Sending stream connected");
         let msg = status.make_status_message(StatusCode::Connect);
         slim_tx.send(msg).ok();
     }
 
+    let status_ref = status.clone();
+    let slim_tx_ref = slim_tx.clone();
     let mss = MediaSourceStream::new(
         Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
             threshold as usize * 1024,
             data_stream,
             status.clone(),
+            threshold,
+            Some(Box::new(move || {
+                info!("Sending buffer threshold reached");
+                if let Ok(mut status) = status_ref.lock() {
+                    let msg = status.make_status_message(StatusCode::BufferThreshold);
+                    slim_tx_ref.send(msg).ok();
+                }
+            })),
         ))),
         Default::default(),
     );
@@ -201,7 +222,7 @@ pub fn make_stream(
     ) {
         Ok(probed) => probed,
         Err(_) => {
-            if let Ok(status) = status.read() {
+            if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx.send(msg).ok();
             }
@@ -212,7 +233,7 @@ pub fn make_stream(
     let track = match probed.format.default_track() {
         Some(track) => track,
         None => {
-            if let Ok(status) = status.read() {
+            if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx.send(msg).ok();
             }
@@ -220,7 +241,7 @@ pub fn make_stream(
         }
     };
 
-    if let Ok(status) = status.read() {
+    if let Ok(mut status) = status.lock() {
         let msg = status.make_status_message(StatusCode::StreamEstablished);
         slim_tx.send(msg).ok();
     }
@@ -259,7 +280,7 @@ pub fn make_stream(
         match Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None) {
             Some(stream) => stream,
             None => {
-                if let Ok(status) = status.read() {
+                if let Ok(mut status) = status.lock() {
                     let msg = status.make_status_message(StatusCode::NotSupported);
                     slim_tx.send(msg).ok();
                 }
@@ -291,19 +312,11 @@ pub fn make_stream(
         }
         Err(DecoderError::StreamError(e)) => {
             error!("Error reading data stream: {}", e);
-            if let Ok(status) = status.read() {
+            if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx.send(msg).ok();
             }
             return Err(e.into());
-        }
-    }
-
-    if audio_buf.len() >= threshold_samples as usize {
-        info!("Sending output buffer threshold reached");
-        if let Ok(status) = status.read() {
-            let msg = status.make_status_message(StatusCode::BufferThreshold);
-            slim_tx.send(msg).ok();
         }
     }
 
@@ -326,7 +339,7 @@ pub fn make_stream(
                 }
                 Err(DecoderError::StreamError(e)) => {
                     error!("Error reading data stream: {}", e);
-                    if let Ok(status) = status.read() {
+                    if let Ok(mut status) = status.lock() {
                         let msg = status.make_status_message(StatusCode::NotSupported);
                         slim_tx.send(msg).ok();
                     }
@@ -359,7 +372,7 @@ pub fn make_stream(
             };
 
             if let Ok(Some(stream_time)) = unsafe { (*sm_ref.as_ptr()).get_time() } {
-                if let Ok(mut status) = status_ref.write() {
+                if let Ok(mut status) = status_ref.lock() {
                     status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
                     status.set_elapsed_seconds(stream_time.as_secs() as u32);
                     status.set_output_buffer_size(audio_buf.capacity() as u32);

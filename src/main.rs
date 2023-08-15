@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow;
@@ -92,6 +92,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         // Start the slim protocol threads
         let status = Arc::new(Mutex::new(StatusData::default()));
+        let start_time = Instant::now();
         let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
         let name = Arc::new(RwLock::new(cli.name.to_owned()));
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
@@ -132,6 +133,7 @@ fn main() -> anyhow::Result<()> {
                         &mut streams,
                         skip.clone(),
                         &cli,
+                        &start_time,
                     )?;
                 }
                 Ok(op) if op.index() == stream_idx => {
@@ -168,6 +170,7 @@ fn process_slim_msg(
     streams: &mut stream::StreamQueue,
     skip: Arc<AtomicCell<Duration>>,
     cli: &Cli,
+    start_time: &Instant,
 ) -> anyhow::Result<()> {
     // println!("{:?}", msg);
     match msg {
@@ -275,11 +278,7 @@ fn process_slim_msg(
                 }
                 ml.borrow_mut().unlock();
             } else {
-                let dur = match status.lock() {
-                    Ok(status) => interval.saturating_sub(status.get_jiffies()),
-                    Err(_) => Duration::ZERO,
-                };
-
+                let dur = interval.saturating_sub(Instant::now() - *start_time);
                 info!("Resuming in {:?}", dur);
                 std::thread::spawn(move || {
                     std::thread::sleep(dur);
@@ -417,8 +416,8 @@ fn process_stream_msg(
                     let msg = status.make_status_message(StatusCode::TrackStarted);
                     slim_tx_in.send(msg).ok();
                 }
+                streams.set_buffering(false);
             }
-            streams.set_buffering(false);
         }
     }
 }

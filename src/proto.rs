@@ -97,7 +97,9 @@ pub fn run(
                         break;
                     }
                     _ => {
-                        slim_rx_in.send(msg).ok();
+                        if slim_rx_in.send(msg).is_err() {
+                            break;
+                        }
                     }
                 }
             }

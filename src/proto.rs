@@ -53,6 +53,7 @@ pub fn run(
             caps.add(Capability::Flc);
 
             // Connect to the server
+            info!("Connecting to server: {}", server.socket);
             let (mut rx, mut tx) = match server.clone().prepare(caps).connect() {
                 Ok((rx, tx)) => (rx, tx),
                 Err(_) => {
@@ -68,7 +69,7 @@ pub fn run(
                 while let Ok(msg) = slim_tx_out_r.recv() {
                     // println!("{:?}", msg);
                     if tx.framed_write(msg).is_err() {
-                        return;
+                        break;
                     }
                 }
             });
@@ -98,11 +99,13 @@ pub fn run(
                     }
                     _ => {
                         if slim_rx_in.send(msg).is_err() {
+                            info!("Server error detected");
                             break;
                         }
                     }
                 }
             }
+            info!("Lost contact with server at {}", server.socket);
         }
     });
 }

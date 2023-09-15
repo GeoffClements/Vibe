@@ -6,14 +6,14 @@ use std::{
 use crossbeam::channel::{Receiver, Sender};
 use log::{error, info};
 use slimproto::{
-    self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage, FramedReader,
-    FramedWriter, ServerMessage,
+    self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage,
+    FramedReader, FramedWriter, ServerMessage,
 };
 
 pub fn run(
     server_addr: Option<SocketAddrV4>,
     name: Arc<RwLock<String>>,
-    slim_rx_in: Sender<ServerMessage>,
+    slim_rx_in: Sender<Option<ServerMessage>>,
     slim_tx_out: Receiver<ClientMessage>,
 ) {
     std::thread::spawn(move || {
@@ -26,10 +26,10 @@ pub fn run(
         };
 
         slim_rx_in
-            .send(ServerMessage::Serv {
+            .send(Some(ServerMessage::Serv {
                 ip_address: Ipv4Addr::from(*server.socket.ip()),
                 sync_group_id: None,
-            })
+            }))
             .ok();
 
         let mut syncgroupid = String::new();
@@ -75,33 +75,40 @@ pub fn run(
             });
 
             // Inner read loop
-            while let Ok(msg) = rx.framed_read() {
-                // println!("{:?}", msg);
-                match msg {
-                    // Request to change to another server
-                    ServerMessage::Serv {
-                        ip_address: ip,
-                        sync_group_id: sgid,
-                    } => {
-                        if let Some(ref sgid) = sgid {
-                            syncgroupid = sgid.to_owned();
-                        }
-
-                        server = (ip, sgid).into();
-                        // Now inform the main thread
-                        slim_rx_in
-                            .send(ServerMessage::Serv {
+            loop {
+                match rx.framed_read() {
+                    Ok(msg) => {
+                        // println!("{:?}", msg);
+                        match msg {
+                            // Request to change to another server
+                            ServerMessage::Serv {
                                 ip_address: ip,
-                                sync_group_id: None,
-                            })
-                            .ok();
-                        break;
-                    }
-                    _ => {
-                        if slim_rx_in.send(msg).is_err() {
-                            info!("Server error detected");
-                            break;
+                                sync_group_id: sgid,
+                            } => {
+                                if let Some(ref sgid) = sgid {
+                                    syncgroupid = sgid.to_owned();
+                                }
+
+                                server = (ip, sgid).into();
+                                // Now inform the main thread
+                                slim_rx_in
+                                    .send(Some(ServerMessage::Serv {
+                                        ip_address: ip,
+                                        sync_group_id: None,
+                                    }))
+                                    .ok();
+                                break;
+                            }
+
+                            _ => {
+                                slim_rx_in.send(Some(msg)).ok();
+                            }
                         }
+                    }
+
+                    Err(_) => {
+                        slim_rx_in.send(None).ok();
+                        break;
                     }
                 }
             }

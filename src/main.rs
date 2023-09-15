@@ -117,10 +117,9 @@ fn main() -> anyhow::Result<()> {
         let stream_idx = select.recv(&stream_out);
 
         loop {
-            match select.select_timeout(Duration::from_secs(30)) {
-                Ok(op) if op.index() == slim_idx => {
-                    let msg = op.recv(&slim_rx_out)?;
-                    process_slim_msg(
+            match select.select() {
+                op if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
+                    Some(msg) => process_slim_msg(
                         msg,
                         &mut server_default_ip,
                         name.clone(),
@@ -134,9 +133,14 @@ fn main() -> anyhow::Result<()> {
                         skip.clone(),
                         &cli,
                         &start_time,
-                    )?;
-                }
-                Ok(op) if op.index() == stream_idx => {
+                    )?,
+                    None => {
+                        info!("Lost contact with server, resetting");
+                        streams.stop();
+                        break;
+                    }
+                },
+                op if op.index() == stream_idx => {
                     let msg = op.recv(&stream_out)?;
                     process_stream_msg(
                         msg,
@@ -147,11 +151,7 @@ fn main() -> anyhow::Result<()> {
                         ml.clone(),
                     );
                 }
-                Ok(_) => {}
-                Err(_) => {
-                    info!("Lost contact with server, resetting");
-                    break;
-                }
+                _ => {}
             }
         }
     }

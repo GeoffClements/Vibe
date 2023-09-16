@@ -307,7 +307,7 @@ fn process_slim_msg(
             output_threshold,
             ..
         } => {
-            info!("Start stream command from server");
+            info!("Start stream command from server, autostart: {:?}", autostart);
             if let Some(http_headers) = http_headers {
                 let num_crlf = http_headers.matches("\r\n").count();
 

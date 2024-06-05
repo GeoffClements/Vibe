@@ -136,6 +136,7 @@ fn main() -> anyhow::Result<()> {
                     )?,
                     None => {
                         info!("Lost contact with server, resetting");
+                        slim_tx_in.send(ClientMessage::Bye(1)).ok();
                         streams.stop();
                         break;
                     }

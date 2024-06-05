@@ -35,7 +35,7 @@ pub fn run(
         let mut syncgroupid = String::new();
         // Outer loop to reconnect to a different server and
         // update server details when a Serv message is received
-        loop {
+        'outer: loop {
             let mut caps = Capabilities::default();
             if let Ok(name) = name.read() {
                 caps.add_name(&name);
@@ -68,6 +68,12 @@ pub fn run(
             std::thread::spawn(move || {
                 while let Ok(msg) = slim_tx_out_r.recv() {
                     // println!("{:?}", msg);
+                    if let ClientMessage::Bye(n) = msg {
+                        if n == 1 {
+                            break;
+                        }
+                    }
+
                     if tx.framed_write(msg).is_err() {
                         break;
                     }
@@ -108,11 +114,11 @@ pub fn run(
 
                     Err(_) => {
                         slim_rx_in.send(None).ok();
-                        break;
+                        break 'outer;
                     }
                 }
             }
-            info!("Lost contact with server at {}", server.socket);
         }
+        info!("Lost contact with server at {}", server.socket);
     });
 }

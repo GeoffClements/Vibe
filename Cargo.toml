@@ -12,13 +12,13 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.71"
-clap = { version = "4.3.19", features = ["derive"] }
-crossbeam = "0.8.2"
+anyhow = "1.0.86"
+clap = { version = "4.5.4", features = ["derive"] }
+crossbeam = "0.8.4"
 libpulse-binding = "2.28.1"
-log = "0.4.19"
+log = "0.4.21"
 slimproto = "0.1.15"
-symphonia = { version = "0.5.3", features = ["all-codecs"] }
+symphonia = { version = "0.5.4", features = ["all-codecs"] }
 
 [dependencies.simple_logger]
 version = "5.0.0"

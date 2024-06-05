@@ -182,20 +182,24 @@ pub fn make_stream(
         slim_tx.send(msg).ok();
     }
 
+    let status_ref = status.clone();
+    let slim_tx_ref = slim_tx.clone();
     let mss = MediaSourceStream::new(
         Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
             threshold as usize * 1024,
             data_stream,
             status.clone(),
             threshold,
+            Some(Box::new(move || {
+                info!("Sending buffer threshold reached");
+                if let Ok(mut status) = status_ref.lock() {
+                    let msg = status.make_status_message(StatusCode::BufferThreshold);
+                    slim_tx_ref.send(msg).ok();
+                }
+            })),
         ))),
         Default::default(),
     );
-
-    if let Ok(mut status) = status.lock() {
-        let msg = status.make_status_message(StatusCode::BufferThreshold);
-        slim_tx.send(msg).ok();
-    }
 
     // Create a hint to help the format registry guess what format reader is appropriate.
     let mut hint = Hint::new();

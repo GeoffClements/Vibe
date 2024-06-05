@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "Vibe_Player"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -468,9 +468,7 @@ dependencies = [
 
 [[package]]
 name = "slimproto"
-version = "0.1.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34b50c389242a638b46f6383d49fc79076bd5dbbe1dabccf775be872e8407d41"
+version = "0.1.17"
 dependencies = [
  "bitflags 2.5.0",
  "bytes",

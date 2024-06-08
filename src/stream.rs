@@ -325,7 +325,7 @@ pub fn make_stream(
 
     // Add callback to pa_stream to feed music
     let status_ref = status.clone();
-    let sm_ref = pa_stream.clone();
+    let sm_ref = Rc::downgrade(&pa_stream);
     (*pa_stream)
         .borrow_mut()
         .set_write_callback(Some(Box::new(move |len| {
@@ -364,25 +364,25 @@ pub fn make_stream(
                 }
             };
 
-            unsafe {
-                (*sm_ref.as_ptr())
-                    .write_copy(
-                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                        offset,
-                        pa::stream::SeekMode::Relative,
-                    )
-                    .ok()
-            };
+            if let Some(sm) = sm_ref.upgrade() {
+                unsafe {
+                    (*sm.as_ptr())
+                        .write_copy(
+                            &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                            offset,
+                            pa::stream::SeekMode::Relative,
+                        )
+                        .ok();
+                    (*sm.as_ptr()).update_timing_info(None);
 
-            unsafe {
-                (*sm_ref.as_ptr()).update_timing_info(None);
-            }
-            if let Ok(Some(stream_time)) = unsafe { (*sm_ref.as_ptr()).get_time() } {
-                if let Ok(mut status) = status_ref.lock() {
-                    status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
-                    status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                    status.set_output_buffer_size(audio_buf.capacity() as u32);
-                    status.set_output_buffer_fullness(audio_buf.len() as u32);
+                    if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
+                        if let Ok(mut status) = status_ref.lock() {
+                            status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
+                            status.set_elapsed_seconds(stream_time.as_secs() as u32);
+                            status.set_output_buffer_size(audio_buf.capacity() as u32);
+                            status.set_output_buffer_fullness(audio_buf.len() as u32);
+                        };
+                    }
                 };
             }
         })));

@@ -269,7 +269,7 @@ fn process_slim_msg(
                     }
 
                     if streams.is_buffering() {
-                        info!("Sending track started");
+                        info!("Sending track unpaused by server");
                         if let Ok(mut status) = status.lock() {
                             let msg = status.make_status_message(StatusCode::TrackStarted);
                             slim_tx_in.send(msg).ok();
@@ -345,7 +345,7 @@ fn process_slim_msg(
                             if autostart == slimproto::proto::AutoStart::Auto {
                                 ml.borrow_mut().lock();
                                 if streams.uncork() {
-                                    info!("Sending track started");
+                                    info!("Sending track autostarted");
                                     if let Ok(mut status) = status.lock() {
                                         let msg =
                                             status.make_status_message(StatusCode::TrackStarted);
@@ -395,7 +395,7 @@ fn process_stream_msg(
                     ml.borrow_mut().lock();
                     old_stream.borrow_mut().disconnect().ok();
                     if streams.uncork() {
-                        info!("Sending track started");
+                        info!("Sending new track started");
                         if let Ok(mut status) = status.lock() {
                             let msg = status.make_status_message(StatusCode::TrackStarted);
                             slim_tx_in.send(msg).ok();
@@ -415,7 +415,7 @@ fn process_stream_msg(
             streams.uncork();
             ml.borrow_mut().unlock();
             if streams.is_buffering() {
-                info!("Sending track started");
+                info!("Sending track unpaused by player");
                 if let Ok(mut status) = status.lock() {
                     let msg = status.make_status_message(StatusCode::TrackStarted);
                     slim_tx_in.send(msg).ok();

@@ -26,8 +26,12 @@ amazing work!.
 - Play some radio streams
 
 ## What Vibe can't do
-- Synchronise with other players (although it *should*, this is a WIP)
+- Synchronise with other players (although it *should*, this is a WIP) but I need help with pulseaudio
 - Can't play some radio streams, but neither can my Squeezebox.
+
+## Compiling
+In order to compile, you will need to install the development packages for
+libpulse (this is libpulse-dev for Ubuntu).
 
 ## Background
 Vibe is 100% written in [Rust][`rust`] and has all the benefits that Rust

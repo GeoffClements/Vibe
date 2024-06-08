@@ -10,7 +10,7 @@ use std::{
 
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 use libpulse_binding as pa;
-use log::{error, info};
+use log::{error, info, warn};
 use pa::{context::Context, operation::Operation, sample::Spec, stream::Stream};
 use slimproto::{
     buffer::SlimBuffer,
@@ -222,6 +222,7 @@ pub fn make_stream(
     ) {
         Ok(probed) => probed,
         Err(_) => {
+            warn!("Unsupported format");
             if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx.send(msg).ok();
@@ -233,6 +234,7 @@ pub fn make_stream(
     let track = match probed.format.default_track() {
         Some(track) => track,
         None => {
+            warn!("Cannot find default track");
             if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx.send(msg).ok();
@@ -242,6 +244,7 @@ pub fn make_stream(
     };
 
     if let Ok(mut status) = status.lock() {
+        info!("Sending stream established");
         let msg = status.make_status_message(StatusCode::StreamEstablished);
         slim_tx.send(msg).ok();
     }

@@ -31,7 +31,7 @@ amazing work!.
 
 ## Compiling
 In order to compile, you will need to install the development packages for
-libpulse (this is libpulse-dev for Ubuntu).
+libpulse (this is `libpulse-dev` for Ubuntu).
 
 ## Background
 Vibe is 100% written in [Rust][`rust`] and has all the benefits that Rust

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cell::RefCell, ops::Deref, rc::Rc, time::Duration};
+use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use crossbeam::channel::bounded;
 use libpulse_binding::{
@@ -7,7 +7,6 @@ use libpulse_binding::{
     context::{Context, FlagSet as CxFlagSet},
     error::PAErr,
     mainloop::threaded::Mainloop,
-    operation::State::Running,
     stream::{FlagSet as SmFlagSet, Stream},
 };
 
@@ -72,6 +71,12 @@ impl Output {
             mainloop: Rc::into_inner(ml).unwrap().into_inner(),
             context: Rc::into_inner(cx).unwrap().into_inner(),
         })
+    }
+}
+
+impl Drop for Output {
+    fn drop(&mut self) {
+        self.context.disconnect();
     }
 }
 
@@ -191,7 +196,7 @@ pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
     let _op = output
         .context
         .introspect()
-        .get_sink_info_list(move |list| match list {
+        .get_sink_info_list(move |listresult| match listresult {
             ListResult::Item(item) => {
                 s.send(item.name.as_ref().map(|n| n.to_string())).ok();
             }
@@ -204,8 +209,6 @@ pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
     while let Some(name) = r.recv()? {
         ret.push(name);
     }
-
-    output.context.disconnect();
 
     Ok(ret)
 }

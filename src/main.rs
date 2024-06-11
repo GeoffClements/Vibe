@@ -26,8 +26,10 @@ use slimproto::{
 };
 
 mod proto;
+#[cfg(feature = "pulse")]
 mod pulse;
 mod stream;
+mod decode;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]

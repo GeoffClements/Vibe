@@ -15,7 +15,7 @@ authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 anyhow = "1.0.86"
 clap = { version = "4.5.6", features = ["derive"] }
 crossbeam = "0.8.4"
-libpulse-binding = "2.28.1"
+libpulse-binding = { version = "2.28.1", optional = true }
 log = "0.4.21"
 slimproto = "0.1.17"
 symphonia = { version = "0.5.4", features = ["all-codecs"] }
@@ -24,6 +24,10 @@ symphonia = { version = "0.5.4", features = ["all-codecs"] }
 version = "5.0.0"
 default-features = false
 features = ["stderr", "colors"]
+
+[features]
+default = ["pulse"]
+pulse = ["dep:libpulse-binding"]
 
 [[bin]]
 name = "vibe"

@@ -9,42 +9,21 @@ use std::{
 };
 
 use crossbeam::{atomic::AtomicCell, channel::Sender};
+
 use libpulse_binding as pa;
-use log::{error, info, warn};
+
+use log::{error, info};
 use pa::{context::Context, operation::Operation, sample::Spec, stream::Stream};
 use slimproto::{
-    buffer::SlimBuffer,
-    proto::{PcmChannels, PcmSampleRate},
     status::{StatusCode, StatusData},
     ClientMessage,
 };
-use symphonia::core::{
-    audio::{AsAudioBufferRef, RawSampleBuffer, Signal},
-    codecs::{Decoder, DecoderOptions},
-    formats::FormatOptions,
-    io::{MediaSourceStream, ReadOnlySource},
-    meta::MetadataOptions,
-    probe::{Hint, ProbeResult},
+use symphonia::core::audio::{AsAudioBufferRef, RawSampleBuffer, Signal};
+
+use crate::{
+    decode::{Decoder, DecoderError},
+    PlayerMsg,
 };
-
-use crate::PlayerMsg;
-
-#[derive(std::fmt::Debug)]
-enum DecoderError {
-    EndOfDecode,
-    StreamError(symphonia::core::errors::Error),
-}
-
-impl std::fmt::Display for DecoderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DecoderError::EndOfDecode => write!(f, "End of decode stream"),
-            DecoderError::StreamError(e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl std::error::Error for DecoderError {}
 
 pub struct StreamQueue {
     queue: VecDeque<Rc<RefCell<Stream>>>,
@@ -182,223 +161,139 @@ pub fn make_stream(
         slim_tx.send(msg).ok();
     }
 
-    let status_ref = status.clone();
-    let slim_tx_ref = slim_tx.clone();
-    let mss = MediaSourceStream::new(
-        Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
-            threshold as usize * 1024,
-            data_stream,
-            status.clone(),
-            threshold,
-            Some(Box::new(move || {
-                info!("Sending buffer threshold reached");
-                if let Ok(mut status) = status_ref.lock() {
-                    let msg = status.make_status_message(StatusCode::BufferThreshold);
-                    slim_tx_ref.send(msg).ok();
-                }
-            })),
-        ))),
-        Default::default(),
-    );
+    if let Some(mut decoder) = Decoder::try_new(
+        data_stream,
+        status.clone(),
+        slim_tx.clone(),
+        threshold,
+        format,
+        pcmsamplerate,
+        pcmchannels,
+    )? {
+        // Work with a sample format of F32
+        // TODO: use data native format
+        let sample_format = pa::sample::Format::FLOAT32NE;
 
-    // Create a hint to help the format registry guess what format reader is appropriate.
-    let mut hint = Hint::new();
-    hint.mime_type({
-        match format {
-            slimproto::proto::Format::Pcm => "audio/x-adpcm",
-            slimproto::proto::Format::Mp3 => "audio/mpeg3",
-            slimproto::proto::Format::Aac => "audio/aac",
-            slimproto::proto::Format::Ogg => "audio/ogg",
-            slimproto::proto::Format::Flac => "audio/flac",
-            _ => "",
-        }
-    });
+        // Create a spec for the pa stream
+        let spec = Spec {
+            format: sample_format,
+            rate: decoder.sample_rate(),
+            channels: decoder.channels(),
+        };
 
-    let mut probed = match symphonia::default::get_probe().format(
-        &hint,
-        mss,
-        &FormatOptions::default(),
-        &MetadataOptions::default(),
-    ) {
-        Ok(probed) => probed,
-        Err(_) => {
-            warn!("Unsupported format");
-            if let Ok(mut status) = status.lock() {
-                let msg = status.make_status_message(StatusCode::NotSupported);
-                slim_tx.send(msg).ok();
-            }
-            return Ok(None);
-        }
-    };
-
-    let track = match probed.format.default_track() {
-        Some(track) => track,
-        None => {
-            warn!("Cannot find default track");
-            if let Ok(mut status) = status.lock() {
-                let msg = status.make_status_message(StatusCode::NotSupported);
-                slim_tx.send(msg).ok();
-            }
-            return Ok(None);
-        }
-    };
-
-    if let Ok(mut status) = status.lock() {
-        info!("Sending stream established");
-        let msg = status.make_status_message(StatusCode::StreamEstablished);
-        slim_tx.send(msg).ok();
-    }
-
-    // Work with a sample format of F32
-    let sample_format = pa::sample::Format::FLOAT32NE;
-
-    let sample_rate = match pcmsamplerate {
-        PcmSampleRate::Rate(rate) => rate,
-        PcmSampleRate::SelfDescribing => track.codec_params.sample_rate.unwrap_or(44100),
-    };
-
-    let channels = match pcmchannels {
-        PcmChannels::Mono => 1u8,
-        PcmChannels::Stereo => 2,
-        PcmChannels::SelfDescribing => match track.codec_params.channel_layout {
-            Some(symphonia::core::audio::Layout::Mono) => 1,
-            Some(symphonia::core::audio::Layout::Stereo) => 2,
-            None => match track.codec_params.channels {
-                Some(channels) => channels.count() as u8,
-                _ => 2,
-            },
-            _ => 2,
-        },
-    };
-
-    // Create a spec for the pa stream
-    let spec = Spec {
-        format: sample_format,
-        rate: sample_rate,
-        channels,
-    };
-
-    // Create a pulseaudio stream
-    let pa_stream = Rc::new(RefCell::new(
-        match Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None) {
-            Some(stream) => stream,
-            None => {
-                if let Ok(mut status) = status.lock() {
-                    let msg = status.make_status_message(StatusCode::NotSupported);
-                    slim_tx.send(msg).ok();
-                }
-                return Ok(None);
-            }
-        },
-    ));
-
-    // Create a decoder for the track.
-    let mut decoder =
-        symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
-
-    // Create an audio buffer to hold raw u8 samples
-    let threshold_samples =
-        (output_threshold.as_millis() * channels as u128 * sample_rate as u128 / 1000) * 4;
-    let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
-
-    // Prefill audio buffer to threshold
-    match fill_buf(
-        &mut audio_buf,
-        threshold_samples as usize,
-        &mut probed,
-        &mut decoder,
-        volume.clone(),
-    ) {
-        Ok(()) => {}
-        Err(DecoderError::EndOfDecode) => {
-            stream_in.send(PlayerMsg::EndOfDecode).ok();
-        }
-        Err(DecoderError::StreamError(e)) => {
-            error!("Error reading data stream: {}", e);
-            if let Ok(mut status) = status.lock() {
-                let msg = status.make_status_message(StatusCode::NotSupported);
-                slim_tx.send(msg).ok();
-            }
-            return Err(e.into());
-        }
-    }
-
-    // Add callback to pa_stream to feed music
-    let status_ref = status.clone();
-    let sm_ref = Rc::downgrade(&pa_stream);
-    (*pa_stream)
-        .borrow_mut()
-        .set_write_callback(Some(Box::new(move |len| {
-            match fill_buf(
-                &mut audio_buf,
-                len,
-                &mut probed,
-                &mut decoder,
-                volume.clone(),
-            ) {
-                Ok(()) => {}
-                Err(DecoderError::EndOfDecode) => {
-                    stream_in.send(PlayerMsg::EndOfDecode).ok();
-                }
-                Err(DecoderError::StreamError(e)) => {
-                    error!("Error reading data stream: {}", e);
+        // Create a pulseaudio stream
+        let pa_stream = Rc::new(RefCell::new(
+            match Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None) {
+                Some(stream) => stream,
+                None => {
                     if let Ok(mut status) = status.lock() {
                         let msg = status.make_status_message(StatusCode::NotSupported);
                         slim_tx.send(msg).ok();
                     }
-                    return;
+                    return Ok(None);
                 }
+            },
+        ));
+
+        // Create an audio buffer to hold raw u8 samples
+        let threshold_samples = (output_threshold.as_millis()
+            * decoder.channels() as u128
+            * decoder.sample_rate() as u128
+            / 1000)
+            * 4;
+        let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
+
+        // Prefill audio buffer to threshold
+        match fill_buf(
+            &mut audio_buf,
+            threshold_samples as usize,
+            &mut decoder,
+            volume.clone(),
+        ) {
+            Ok(()) => {}
+            Err(DecoderError::EndOfDecode) => {
+                stream_in.send(PlayerMsg::EndOfDecode).ok();
             }
-
-            let buf_len = if audio_buf.len() < len {
-                audio_buf.len()
-            } else {
-                len
-            };
-
-            let offset = match skip.take() {
-                dur if dur.is_zero() => 0i64,
-                dur => {
-                    let samples = dur.as_millis() as f64 * spec.rate as f64 / 1000.0;
-                    samples.round() as i64 * spec.channels as i64 * 4
+            Err(DecoderError::StreamError(e)) => {
+                error!("Error reading data stream: {}", e);
+                if let Ok(mut status) = status.lock() {
+                    let msg = status.make_status_message(StatusCode::NotSupported);
+                    slim_tx.send(msg).ok();
                 }
-            };
+                return Err(e.into());
+            }
+        }
 
-            if let Some(sm) = sm_ref.upgrade() {
-                unsafe {
-                    (*sm.as_ptr())
-                        .write_copy(
-                            &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                            offset,
-                            pa::stream::SeekMode::Relative,
-                        )
-                        .ok();
-                    (*sm.as_ptr()).update_timing_info(None);
+        // Add callback to pa_stream to feed music
+        let status_ref = status.clone();
+        let sm_ref = Rc::downgrade(&pa_stream);
+        (*pa_stream)
+            .borrow_mut()
+            .set_write_callback(Some(Box::new(move |len| {
+                match fill_buf(&mut audio_buf, len, &mut decoder, volume.clone()) {
+                    Ok(()) => {}
+                    Err(DecoderError::EndOfDecode) => {
+                        stream_in.send(PlayerMsg::EndOfDecode).ok();
+                    }
+                    Err(DecoderError::StreamError(e)) => {
+                        error!("Error reading data stream: {}", e);
+                        if let Ok(mut status) = status.lock() {
+                            let msg = status.make_status_message(StatusCode::NotSupported);
+                            slim_tx.send(msg).ok();
+                        }
+                        return;
+                    }
+                }
 
-                    if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
-                        if let Ok(mut status) = status_ref.lock() {
-                            status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
-                            status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                            status.set_output_buffer_size(audio_buf.capacity() as u32);
-                            status.set_output_buffer_fullness(audio_buf.len() as u32);
-                        };
+                let buf_len = if audio_buf.len() < len {
+                    audio_buf.len()
+                } else {
+                    len
+                };
+
+                let offset = match skip.take() {
+                    dur if dur.is_zero() => 0i64,
+                    dur => {
+                        let samples = dur.as_millis() as f64 * spec.rate as f64 / 1000.0;
+                        samples.round() as i64 * spec.channels as i64 * 4
                     }
                 };
-            }
-        })));
 
-    Ok(Some(pa_stream))
+                if let Some(sm) = sm_ref.upgrade() {
+                    unsafe {
+                        (*sm.as_ptr())
+                            .write_copy(
+                                &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                                offset,
+                                pa::stream::SeekMode::Relative,
+                            )
+                            .ok();
+                        (*sm.as_ptr()).update_timing_info(None);
+
+                        if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
+                            if let Ok(mut status) = status_ref.lock() {
+                                status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
+                                status.set_elapsed_seconds(stream_time.as_secs() as u32);
+                                status.set_output_buffer_size(audio_buf.capacity() as u32);
+                                status.set_output_buffer_fullness(audio_buf.len() as u32);
+                            };
+                        }
+                    };
+                }
+            })));
+        return Ok(Some(pa_stream));
+    }
+    Ok(None)
 }
 
 fn fill_buf(
     buffer: &mut Vec<u8>,
     limit: usize,
-    probed: &mut ProbeResult,
-    decoder: &mut Box<dyn Decoder>,
+    decoder: &mut Decoder,
     volume: Arc<Mutex<Vec<f32>>>,
 ) -> Result<(), DecoderError> {
     while buffer.len() < limit {
-        let packet = match probed.format.next_packet() {
+        let packet = match decoder.probed.format.next_packet() {
             Ok(packet) => packet,
             Err(symphonia::core::errors::Error::IoError(err))
                 if err.kind() == std::io::ErrorKind::UnexpectedEof
@@ -411,7 +306,7 @@ fn fill_buf(
             }
         };
 
-        let decoded = match decoder.decode(&packet) {
+        let decoded = match decoder.decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(_) => continue,
         };

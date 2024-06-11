@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     net::{Ipv4Addr, SocketAddrV4},
+    process::Output,
     rc::Rc,
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
@@ -16,7 +17,13 @@ use crossbeam::{
     atomic::AtomicCell,
     channel::{bounded, Select, Sender},
 };
+
+#[cfg(feature = "pulse")]
 use libpulse_binding as pa;
+
+#[cfg(feature = "pulse")]
+use pulse as output;
+
 use log::{info, warn};
 use pa::{context::Context, mainloop::threaded::Mainloop};
 use simple_logger::SimpleLogger;
@@ -25,11 +32,11 @@ use slimproto::{
     status::{StatusCode, StatusData},
 };
 
+mod decode;
 mod proto;
 #[cfg(feature = "pulse")]
 mod pulse;
 mod stream;
-mod decode;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
@@ -87,7 +94,17 @@ fn main() -> anyhow::Result<()> {
 
     // List the output devices and terminate
     if cli.list {
-        print_output_devices(ml.clone(), cx.clone());
+        println!("Output devices:");
+        let names = output::get_output_device_names()?;
+        names
+            .iter()
+            .enumerate()
+            .for_each(|(i, name)| println!("{}: {}", i, name));
+        print!("Found {} device", names.len());
+        if names.len() != 1 {
+            print!("s");
+        }
+        println!();
         return Ok(());
     }
 
@@ -426,29 +443,4 @@ fn process_stream_msg(
             }
         }
     }
-}
-
-fn print_output_devices(ml: Rc<RefCell<Mainloop>>, cx: Rc<RefCell<Context>>) {
-    println!("Output devices:");
-    let count = Arc::new(AtomicCell::new(0usize));
-    let count_ref = count.clone();
-    ml.borrow_mut().lock();
-    let op = cx.borrow().introspect().get_sink_info_list(move |list| {
-        if let libpulse_binding::callbacks::ListResult::Item(item) = list {
-            if let Some(name) = &item.name {
-                count_ref.fetch_add(1);
-                println!("{}: {}", count_ref.load(), name);
-            }
-        }
-    });
-    ml.borrow_mut().unlock();
-
-    while op.get_state() == pa::operation::State::Running {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    print!("Found {} device", count.load());
-    if count.load() != 1 {
-        print!("s");
-    }
-    println!();
 }

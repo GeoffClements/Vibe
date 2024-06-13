@@ -26,8 +26,9 @@ default-features = false
 features = ["stderr", "colors"]
 
 [features]
-default = ["pulse"]
+default = ["dummy"]
 pulse = ["dep:libpulse-binding"]
+dummy = []
 
 [[bin]]
 name = "vibe"

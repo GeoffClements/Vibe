@@ -3,16 +3,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow;
-use crossbeam::channel::Sender;
-use log::{info, warn};
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
-    status::{StatusCode, StatusData},
-    ClientMessage,
+    status::StatusData,
 };
 use symphonia::core::{
+    audio::{AsAudioBufferRef, RawSampleBuffer, Signal},
     codecs::{Decoder as SymDecoder, DecoderOptions},
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
@@ -57,33 +54,11 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn try_new(
-        data_stream: TcpStream,
-        status: Arc<Mutex<StatusData>>,
-        slim_tx: Sender<ClientMessage>,
-        threshold: u32,
+        mss: MediaSourceStream,
         format: slimproto::proto::Format,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
         pcmchannels: slimproto::proto::PcmChannels,
-    ) -> anyhow::Result<Option<Self>> {
-        let status_ref = status.clone();
-        let slim_tx_ref = slim_tx.clone();
-        let mss = MediaSourceStream::new(
-            Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
-                threshold as usize * 1024,
-                data_stream,
-                status.clone(),
-                threshold,
-                Some(Box::new(move || {
-                    info!("Sending buffer threshold reached");
-                    if let Ok(mut status) = status_ref.lock() {
-                        let msg = status.make_status_message(StatusCode::BufferThreshold);
-                        slim_tx_ref.send(msg).ok();
-                    }
-                })),
-            ))),
-            Default::default(),
-        );
-
+    ) -> Option<Self> {
         // Create a hint to help the format registry guess what format reader is appropriate.
         let mut hint = Hint::new();
         hint.mime_type({
@@ -105,32 +80,16 @@ impl Decoder {
         ) {
             Ok(probed) => probed,
             Err(_) => {
-                warn!("Unsupported format");
-                if let Ok(mut status) = status.lock() {
-                    let msg = status.make_status_message(StatusCode::NotSupported);
-                    slim_tx.send(msg).ok();
-                }
-                return Ok(None);
+                return None;
             }
         };
 
         let track = match probed.format.default_track() {
             Some(track) => track,
             None => {
-                warn!("Cannot find default track");
-                if let Ok(mut status) = status.lock() {
-                    let msg = status.make_status_message(StatusCode::NotSupported);
-                    slim_tx.send(msg).ok();
-                }
-                return Ok(None);
+                return None;
             }
         };
-
-        if let Ok(mut status) = status.lock() {
-            info!("Sending stream established");
-            let msg = status.make_status_message(StatusCode::StreamEstablished);
-            slim_tx.send(msg).ok();
-        }
 
         let sample_rate = match pcmsamplerate {
             PcmSampleRate::Rate(rate) => rate,
@@ -152,10 +111,16 @@ impl Decoder {
         };
 
         // Create a decoder for the track.
-        let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())?;
+        let decoder = match symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+        {
+            Ok(decoder) => decoder,
+            Err(_) => {
+                return None;
+            }
+        };
 
-        Ok(Some(Decoder {
+        Some(Decoder {
             probed: probed,
             decoder: decoder,
             spec: AudioSpec {
@@ -163,7 +128,7 @@ impl Decoder {
                 sample_rate: sample_rate,
                 format: AudioFormat::F32,
             },
-        }))
+        })
     }
 
     pub fn channels(&self) -> u8 {
@@ -173,4 +138,69 @@ impl Decoder {
     pub fn sample_rate(&self) -> u32 {
         self.spec.sample_rate
     }
+
+    pub fn fill_buf(
+        &mut self,
+        buffer: &mut Vec<u8>,
+        limit: usize,
+        volume: Arc<Mutex<Vec<f32>>>,
+    ) -> Result<(), DecoderError> {
+        while buffer.len() < limit {
+            let packet = match self.probed.format.next_packet() {
+                Ok(packet) => packet,
+                Err(symphonia::core::errors::Error::IoError(err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof
+                        && err.to_string() == "end of stream" =>
+                {
+                    return Err(DecoderError::EndOfDecode);
+                }
+                Err(e) => {
+                    return Err(DecoderError::StreamError(e));
+                }
+            };
+
+            let decoded = match self.decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(_) => continue,
+            };
+
+            if decoded.frames() == 0 {
+                continue;
+            }
+
+            let mut sample_buf = decoded.make_equivalent::<f32>();
+            decoded.convert(&mut sample_buf);
+
+            if let Ok(vol) = volume.lock() {
+                for chan in 0..sample_buf.spec().channels.count() {
+                    let chan_samples = sample_buf.chan_mut(chan);
+                    chan_samples.iter_mut().for_each(|s| *s *= vol[chan % 2]);
+                }
+            }
+
+            let mut raw_buf =
+                RawSampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+
+            raw_buf.copy_interleaved_ref(sample_buf.as_audio_buffer_ref());
+            buffer.extend_from_slice(raw_buf.as_bytes());
+        }
+        Ok(())
+    }
+}
+
+pub fn media_source(
+    data_stream: TcpStream,
+    status: Arc<Mutex<StatusData>>,
+    threshold: u32,
+) -> MediaSourceStream {
+    MediaSourceStream::new(
+        Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
+            threshold as usize * 1024,
+            data_stream,
+            status,
+            threshold,
+            None,
+        ))),
+        Default::default(),
+    )
 }

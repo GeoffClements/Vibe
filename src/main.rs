@@ -1,8 +1,6 @@
 use std::{
     cell::RefCell,
     net::{Ipv4Addr, SocketAddrV4},
-    process::Output,
-    rc::Rc,
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
@@ -18,24 +16,26 @@ use crossbeam::{
     channel::{bounded, Select, Sender},
 };
 
-#[cfg(feature = "pulse")]
-use libpulse_binding as pa;
-
+#[cfg(feature = "dummy")]
+use dummy as output;
 #[cfg(feature = "pulse")]
 use pulse as output;
 
 use log::{info, warn};
-use pa::{context::Context, mainloop::threaded::Mainloop};
+use output::AudioOutput;
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, ServerMessage, SLIM_PORT},
     status::{StatusCode, StatusData},
 };
 
-mod decode;
-mod proto;
+#[cfg(feature = "dummy")]
+mod dummy;
 #[cfg(feature = "pulse")]
 mod pulse;
+
+mod decode;
+mod proto;
 mod stream;
 
 #[derive(Parser)]
@@ -80,6 +80,10 @@ pub enum PlayerMsg {
     Drained,
     Pause,
     Unpause,
+    Connected,
+    BufferThreshold,
+    NotSupported,
+    StreamEstablished(output::Stream),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -90,7 +94,8 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     // Create a pulse audio threaded main loop and context
-    let (ml, cx) = pulse::setup()?;
+    // let (ml, cx) = pulse::setup()?;
+    let output = AudioOutput::try_new()?;
 
     // List the output devices and terminate
     if cli.list {
@@ -139,6 +144,7 @@ fn main() -> anyhow::Result<()> {
             match select.select() {
                 op if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
                     Some(msg) => process_slim_msg(
+                        &output,
                         msg,
                         &mut server_default_ip,
                         name.clone(),
@@ -146,8 +152,6 @@ fn main() -> anyhow::Result<()> {
                         volume.clone(),
                         status.clone(),
                         stream_in.clone(),
-                        ml.clone(),
-                        cx.clone(),
                         &mut streams,
                         skip.clone(),
                         &cli,
@@ -178,6 +182,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn process_slim_msg(
+    output: &AudioOutput,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
@@ -185,8 +190,6 @@ fn process_slim_msg(
     volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
-    ml: Rc<RefCell<Mainloop>>,
-    cx: Rc<RefCell<Context>>,
     streams: &mut stream::StreamQueue,
     skip: Arc<AtomicCell<Duration>>,
     cli: &Cli,
@@ -339,7 +342,7 @@ fn process_slim_msg(
                         status.add_crlf(num_crlf as u8);
                     }
 
-                    let new_stream = stream::make_stream(
+                    output.make_stream(
                         server_ip,
                         &server_default_ip,
                         server_port,
@@ -351,28 +354,19 @@ fn process_slim_msg(
                         format,
                         pcmsamplerate,
                         pcmchannels,
-                        cx,
                         skip,
                         volume.clone(),
                         output_threshold,
-                    )?;
+                    );
 
-                    if let Some(new_stream) = new_stream {
-                        pulse::connect_stream(ml.clone(), new_stream.clone(), &cli.device)?;
+                    // pulse::connect_stream(ml.clone(), new_stream.clone(), &cli.device)?;
 
-                        if streams.add(new_stream) {
-                            if autostart == slimproto::proto::AutoStart::Auto {
-                                ml.borrow_mut().lock();
-                                if streams.uncork() {
-                                    info!("Sending track autostarted");
-                                    if let Ok(mut status) = status.lock() {
-                                        let msg =
-                                            status.make_status_message(StatusCode::TrackStarted);
-                                        slim_tx_in.send(msg).ok();
-                                    }
-                                    streams.set_buffering(false);
-                                }
-                                ml.borrow_mut().unlock();
+                    if autostart == slimproto::proto::AutoStart::Auto {
+                        if output.play_next() {
+                            info!("Sending track started");
+                            if let Ok(mut status) = status.lock() {
+                                let msg = status.make_status_message(StatusCode::TrackStarted);
+                                slim_tx_in.send(msg).ok();
                             }
                         }
                     }
@@ -393,7 +387,7 @@ fn process_stream_msg(
     slim_tx_in: Sender<ClientMessage>,
     streams: &mut stream::StreamQueue,
     stream_in: Sender<PlayerMsg>,
-    ml: Rc<RefCell<Mainloop>>,
+    output: AudioOutput,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
@@ -441,6 +435,35 @@ fn process_stream_msg(
                 }
                 streams.set_buffering(false);
             }
+        }
+        PlayerMsg::Connected => {
+            if let Ok(mut status) = status.lock() {
+                info!("Sending stream connected");
+                let msg = status.make_status_message(StatusCode::Connect);
+                slim_tx_in.send(msg).ok();
+            }
+        }
+        PlayerMsg::BufferThreshold => {
+            if let Ok(mut status) = status.lock() {
+                info!("Sending buffer threshold reached");
+                let msg = status.make_status_message(StatusCode::BufferThreshold);
+                slim_tx_in.send(msg).ok();
+            }
+        }
+        PlayerMsg::NotSupported => {
+            warn!("Unsupported format");
+            if let Ok(mut status) = status.lock() {
+                let msg = status.make_status_message(StatusCode::NotSupported);
+                slim_tx_in.send(msg).ok();
+            }
+        }
+        PlayerMsg::StreamEstablished(stream) => {
+            if let Ok(mut status) = status.lock() {
+                info!("Sending stream established");
+                let msg = status.make_status_message(StatusCode::StreamEstablished);
+                slim_tx_in.send(msg).ok();
+            }
+            output.enqueue(stream);
         }
     }
 }

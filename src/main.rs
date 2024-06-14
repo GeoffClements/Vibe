@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     net::{Ipv4Addr, SocketAddrV4},
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
@@ -36,7 +35,7 @@ mod pulse;
 
 mod decode;
 mod proto;
-mod stream;
+// mod stream;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
@@ -391,8 +390,7 @@ fn process_stream_msg(
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
-            ml.borrow_mut().lock();
-            if streams.drain(stream_in) {
+            if output.drain(stream_in.clone()) {
                 if let Ok(mut status) = status.lock() {
                     info!("Decoder ready for new stream");
                     let msg = status.make_status_message(StatusCode::DecoderReady);

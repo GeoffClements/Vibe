@@ -1,8 +1,11 @@
 use std::{
-    net::TcpStream,
+    io::Write,
+    net::{Ipv4Addr, TcpStream},
     sync::{Arc, Mutex},
 };
 
+use crossbeam::channel::Sender;
+use log::warn;
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
@@ -15,7 +18,10 @@ use symphonia::core::{
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
     probe::{Hint, ProbeResult},
+    sample::SampleFormat,
 };
+
+use crate::PlayerMsg;
 
 #[derive(Debug)]
 pub enum DecoderError {
@@ -34,10 +40,21 @@ impl std::fmt::Display for DecoderError {
 
 impl std::error::Error for DecoderError {}
 
+#[derive(Clone, Copy)]
 enum AudioFormat {
     F32,
     I16,
     U16,
+}
+
+impl From<SampleFormat> for AudioFormat {
+    fn from(value: SampleFormat) -> Self {
+        match value {
+            SampleFormat::U16 => AudioFormat::U16,
+            SampleFormat::S16 => AudioFormat::I16,
+            _ => AudioFormat::F32,
+        }
+    }
 }
 
 struct AudioSpec {
@@ -91,6 +108,11 @@ impl Decoder {
             }
         };
 
+        let _sample_format = match track.codec_params.sample_format {
+            Some(sample_format) => sample_format.into(),
+            None => AudioFormat::F32,
+        };
+
         let sample_rate = match pcmsamplerate {
             PcmSampleRate::Rate(rate) => rate,
             PcmSampleRate::SelfDescribing => track.codec_params.sample_rate.unwrap_or(44100),
@@ -121,11 +143,12 @@ impl Decoder {
         };
 
         Some(Decoder {
-            probed: probed,
-            decoder: decoder,
+            probed,
+            decoder,
             spec: AudioSpec {
-                channels: channels,
-                sample_rate: sample_rate,
+                channels,
+                sample_rate,
+                // format: sample_format,
                 format: AudioFormat::F32,
             },
         })
@@ -137,6 +160,10 @@ impl Decoder {
 
     pub fn sample_rate(&self) -> u32 {
         self.spec.sample_rate
+    }
+
+    pub fn format(&self) -> AudioFormat {
+        self.spec.format
     }
 
     pub fn fill_buf(
@@ -188,12 +215,35 @@ impl Decoder {
     }
 }
 
-pub fn media_source(
-    data_stream: TcpStream,
+pub fn make_decoder(
+    server_ip: Ipv4Addr,
+    default_ip: Ipv4Addr,
+    server_port: u16,
+    http_headers: String,
+    stream_in: Sender<PlayerMsg>,
     status: Arc<Mutex<StatusData>>,
     threshold: u32,
-) -> MediaSourceStream {
-    MediaSourceStream::new(
+    format: slimproto::proto::Format,
+    pcmsamplerate: slimproto::proto::PcmSampleRate,
+    pcmchannels: slimproto::proto::PcmChannels,
+) -> Option<Decoder> {
+    let ip = if server_ip.is_unspecified() {
+        default_ip
+    } else {
+        server_ip
+    };
+
+    let data_stream = match make_connection(ip, server_port, http_headers) {
+        Ok(data_s) => data_s,
+        Err(_) => {
+            warn!("Unable to connect to data stream at {}", ip);
+            return None;
+        }
+    };
+
+    stream_in.send(PlayerMsg::Connected).ok();
+
+    let mss = MediaSourceStream::new(
         Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
             threshold as usize * 1024,
             data_stream,
@@ -202,5 +252,15 @@ pub fn media_source(
             None,
         ))),
         Default::default(),
-    )
+    );
+    stream_in.send(PlayerMsg::BufferThreshold).ok();
+
+    Decoder::try_new(mss, format, pcmsamplerate, pcmchannels)
+}
+
+fn make_connection(ip: Ipv4Addr, port: u16, http_headers: String) -> anyhow::Result<TcpStream> {
+    let mut data_stream = TcpStream::connect((ip, port))?;
+    data_stream.write(http_headers.as_bytes())?;
+    data_stream.flush()?;
+    Ok(data_stream)
 }

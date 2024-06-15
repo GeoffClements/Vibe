@@ -5,7 +5,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow;
 use clap::{
     builder::{PossibleValuesParser, TypedValueParser},
     Parser,
@@ -35,7 +34,6 @@ mod pulse;
 
 mod decode;
 mod proto;
-// mod stream;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
@@ -274,15 +272,6 @@ fn process_slim_msg(
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
                     }
-
-                    // if streams.is_buffering() {
-                    //     info!("Sending track unpaused by server");
-                    //     if let Ok(mut status) = status.lock() {
-                    //         let msg = status.make_status_message(StatusCode::TrackStarted);
-                    //         slim_tx_in.send(msg).ok();
-                    //     }
-                    //     streams.set_buffering(false);
-                    // }
                 }
             } else {
                 let dur = interval.saturating_sub(Instant::now() - *start_time);
@@ -340,8 +329,6 @@ fn process_slim_msg(
                         volume.clone(),
                         output_threshold,
                     );
-
-                    // pulse::connect_stream(ml.clone(), new_stream.clone(), &cli.device)?;
 
                     if autostart == slimproto::proto::AutoStart::Auto {
                         output.set_autostart(true);

@@ -121,7 +121,7 @@ impl AudioOutput {
                 * decoder.channels() as u128
                 * decoder.sample_rate() as u128
                 / 1000)
-                * 4;
+                * decoder.format().size_of() as u128;
             let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
 
             // Prefill audio buffer to threshold

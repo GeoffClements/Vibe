@@ -83,6 +83,7 @@ pub enum PlayerMsg {
     BufferThreshold,
     NotSupported,
     StreamEstablished(output::Stream),
+    TrackStarted,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -94,7 +95,7 @@ fn main() -> anyhow::Result<()> {
 
     // Create a pulse audio threaded main loop and context
     // let (ml, cx) = pulse::setup()?;
-    let output = AudioOutput::try_new()?;
+    let mut output = AudioOutput::try_new()?;
 
     // List the output devices and terminate
     if cli.list {
@@ -132,7 +133,6 @@ fn main() -> anyhow::Result<()> {
         // let mut volume = ChannelVolumes::default();
         // volume.set_len(2);
 
-        let mut streams = stream::StreamQueue::new();
         let (stream_in, stream_out) = bounded(1);
 
         let mut select = Select::new();
@@ -143,7 +143,7 @@ fn main() -> anyhow::Result<()> {
             match select.select() {
                 op if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
                     Some(msg) => process_slim_msg(
-                        &output,
+                        &mut output,
                         msg,
                         &mut server_default_ip,
                         name.clone(),
@@ -151,15 +151,13 @@ fn main() -> anyhow::Result<()> {
                         volume.clone(),
                         status.clone(),
                         stream_in.clone(),
-                        &mut streams,
                         skip.clone(),
-                        &cli,
                         &start_time,
                     )?,
                     None => {
                         info!("Lost contact with server, resetting");
                         slim_tx_in.send(ClientMessage::Bye(1)).ok();
-                        streams.stop();
+                        output.stop();
                         break;
                     }
                 },
@@ -169,9 +167,8 @@ fn main() -> anyhow::Result<()> {
                         msg,
                         status.clone(),
                         slim_tx_in.clone(),
-                        &mut streams,
+                        &mut output,
                         stream_in.clone(),
-                        ml.clone(),
                     );
                 }
                 _ => {}
@@ -181,7 +178,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn process_slim_msg(
-    output: &AudioOutput,
+    output: &mut AudioOutput,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
@@ -189,9 +186,7 @@ fn process_slim_msg(
     volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
-    streams: &mut stream::StreamQueue,
     skip: Arc<AtomicCell<Duration>>,
-    cli: &Cli,
     start_time: &Instant,
 ) -> anyhow::Result<()> {
     // println!("{:?}", msg);
@@ -231,8 +226,7 @@ fn process_slim_msg(
         }
         ServerMessage::Stop => {
             info!("Stop playback received");
-            ml.borrow_mut().lock();
-            streams.stop();
+            output.stop();
             if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
@@ -240,12 +234,10 @@ fn process_slim_msg(
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();
             }
-            ml.borrow_mut().unlock();
         }
         ServerMessage::Flush => {
             info!("Flushing");
-            ml.borrow_mut().lock();
-            streams.flush();
+            output.flush();
             if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
@@ -253,52 +245,45 @@ fn process_slim_msg(
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();
             }
-            ml.borrow_mut().unlock();
         }
         ServerMessage::Pause(interval) => {
             info!("Pause requested with interval {:?}", interval);
             if interval.is_zero() {
-                ml.borrow_mut().lock();
-                if streams.cork() {
+                if output.pause() {
                     if let Ok(mut status) = status.lock() {
                         info!("Sending paused to server");
                         let msg = status.make_status_message(StatusCode::Pause);
                         slim_tx_in.send(msg).ok();
                     }
                 }
-                ml.borrow_mut().unlock();
             } else {
-                ml.borrow_mut().lock();
-                if streams.cork() {
+                if output.pause() {
                     std::thread::spawn(move || {
                         std::thread::sleep(interval);
                         stream_in.send(PlayerMsg::Unpause).ok();
                     });
                 }
-                ml.borrow_mut().unlock();
             }
         }
         ServerMessage::Unpause(interval) => {
             info!("Resume requested with interval {:?}", interval);
             if interval.is_zero() {
-                ml.borrow_mut().lock();
-                if streams.uncork() {
+                if output.unpause() {
                     if let Ok(mut status) = status.lock() {
                         info!("Sending resumed to server");
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
                     }
 
-                    if streams.is_buffering() {
-                        info!("Sending track unpaused by server");
-                        if let Ok(mut status) = status.lock() {
-                            let msg = status.make_status_message(StatusCode::TrackStarted);
-                            slim_tx_in.send(msg).ok();
-                        }
-                        streams.set_buffering(false);
-                    }
+                    // if streams.is_buffering() {
+                    //     info!("Sending track unpaused by server");
+                    //     if let Ok(mut status) = status.lock() {
+                    //         let msg = status.make_status_message(StatusCode::TrackStarted);
+                    //         slim_tx_in.send(msg).ok();
+                    //     }
+                    //     streams.set_buffering(false);
+                    // }
                 }
-                ml.borrow_mut().unlock();
             } else {
                 let dur = interval.saturating_sub(Instant::now() - *start_time);
                 info!("Resuming in {:?}", dur);
@@ -347,13 +332,11 @@ fn process_slim_msg(
                         server_port,
                         http_headers,
                         status.clone(),
-                        slim_tx_in.clone(),
                         stream_in.clone(),
                         threshold,
                         format,
                         pcmsamplerate,
                         pcmchannels,
-                        skip,
                         volume.clone(),
                         output_threshold,
                     );
@@ -361,13 +344,7 @@ fn process_slim_msg(
                     // pulse::connect_stream(ml.clone(), new_stream.clone(), &cli.device)?;
 
                     if autostart == slimproto::proto::AutoStart::Auto {
-                        if output.play_next() {
-                            info!("Sending track started");
-                            if let Ok(mut status) = status.lock() {
-                                let msg = status.make_status_message(StatusCode::TrackStarted);
-                                slim_tx_in.send(msg).ok();
-                            }
-                        }
+                        output.set_autostart(true);
                     }
                 }
             }
@@ -384,54 +361,40 @@ fn process_stream_msg(
     msg: PlayerMsg,
     status: Arc<Mutex<StatusData>>,
     slim_tx_in: Sender<ClientMessage>,
-    streams: &mut stream::StreamQueue,
+    output: &mut AudioOutput,
     stream_in: Sender<PlayerMsg>,
-    output: AudioOutput,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
-            if output.drain(stream_in.clone()) {
-                if let Ok(mut status) = status.lock() {
-                    info!("Decoder ready for new stream");
-                    let msg = status.make_status_message(StatusCode::DecoderReady);
-                    slim_tx_in.send(msg).ok();
-                }
+            if let Ok(mut status) = status.lock() {
+                info!("Decoder ready for new stream");
+                let msg = status.make_status_message(StatusCode::DecoderReady);
+                slim_tx_in.send(msg).ok();
             }
-            ml.borrow_mut().unlock();
         }
         PlayerMsg::Drained => {
-            if streams.is_draining() {
-                info!("End of track");
-                if let Some(old_stream) = streams.shift() {
-                    ml.borrow_mut().lock();
-                    old_stream.borrow_mut().disconnect().ok();
-                    if streams.uncork() {
-                        info!("Sending new track started");
-                        if let Ok(mut status) = status.lock() {
-                            let msg = status.make_status_message(StatusCode::TrackStarted);
-                            slim_tx_in.send(msg).ok();
-                        }
-                    }
-                    ml.borrow_mut().unlock();
+            info!("End of track");
+            if let Some(mut old_stream) = output.shift() {
+                old_stream.disconnect();
+            }
+            if output.unpause() {
+                info!("Sending new track started");
+                if let Ok(mut status) = status.lock() {
+                    let msg = status.make_status_message(StatusCode::TrackStarted);
+                    slim_tx_in.send(msg).ok();
                 }
             }
         }
         PlayerMsg::Pause => {
-            ml.borrow_mut().lock();
-            streams.cork();
-            ml.borrow_mut().unlock();
+            output.pause();
         }
         PlayerMsg::Unpause => {
-            ml.borrow_mut().lock();
-            streams.uncork();
-            ml.borrow_mut().unlock();
-            if streams.is_buffering() {
+            if output.unpause() {
                 info!("Sending track unpaused by player");
                 if let Ok(mut status) = status.lock() {
                     let msg = status.make_status_message(StatusCode::TrackStarted);
                     slim_tx_in.send(msg).ok();
                 }
-                streams.set_buffering(false);
             }
         }
         PlayerMsg::Connected => {
@@ -461,7 +424,14 @@ fn process_stream_msg(
                 let msg = status.make_status_message(StatusCode::StreamEstablished);
                 slim_tx_in.send(msg).ok();
             }
-            output.enqueue(stream);
+            output.enqueue(stream, stream_in);
+        }
+        PlayerMsg::TrackStarted => {
+            info!("Sending track started");
+            if let Ok(mut status) = status.lock() {
+                let msg = status.make_status_message(StatusCode::TrackStarted);
+                slim_tx_in.send(msg).ok();
+            }
         }
     }
 }

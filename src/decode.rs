@@ -41,7 +41,7 @@ impl std::fmt::Display for DecoderError {
 impl std::error::Error for DecoderError {}
 
 #[derive(Clone, Copy)]
-enum AudioFormat {
+pub enum AudioFormat {
     F32,
     I16,
     U16,

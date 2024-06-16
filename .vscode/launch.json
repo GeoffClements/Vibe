@@ -8,6 +8,23 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'vibe --loglevel info'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=vibe",
+                    "--package=Vibe_Player"
+                ],
+                "filter": {
+                    "name": "vibe",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--loglevel", "info"],
+            "cwd": "${workspaceFolder}"
+        },{
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'vibe -l'",
             "cargo": {
                 "args": [

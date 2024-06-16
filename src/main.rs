@@ -72,6 +72,13 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
     }
 }
 
+pub struct StreamParams {
+    autostart: slimproto::proto::AutoStart,
+    volume: Arc<Mutex<Vec<f32>>>,
+    skip: Arc<AtomicCell<Duration>>,
+    output_threshold: Duration,
+}
+
 pub enum PlayerMsg {
     EndOfDecode,
     Drained,
@@ -80,8 +87,9 @@ pub enum PlayerMsg {
     Connected,
     BufferThreshold,
     NotSupported,
-    StreamEstablished(output::Stream),
+    StreamEstablished,
     TrackStarted,
+    Decoder((decode::Decoder, StreamParams)),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -315,24 +323,35 @@ fn process_slim_msg(
                         status.add_crlf(num_crlf as u8);
                     }
 
-                    output.make_stream(
-                        server_ip,
-                        &server_default_ip,
-                        server_port,
-                        http_headers,
-                        status.clone(),
-                        stream_in.clone(),
-                        threshold,
-                        format,
-                        pcmsamplerate,
-                        pcmchannels,
-                        volume.clone(),
-                        output_threshold,
-                    );
-
-                    if autostart == slimproto::proto::AutoStart::Auto {
-                        output.set_autostart(true);
-                    }
+                    let stream_in_r = stream_in.clone();
+                    let default_ip = server_default_ip.clone();
+                    std::thread::spawn(move || {
+                        match decode::make_decoder(
+                            server_ip,
+                            default_ip,
+                            server_port,
+                            http_headers,
+                            stream_in_r.clone(),
+                            status,
+                            threshold,
+                            format,
+                            pcmsamplerate,
+                            pcmchannels,
+                            autostart,
+                            volume.clone(),
+                            skip.clone(),
+                            output_threshold,
+                        ) {
+                            Some((decoder, stream_params)) => {
+                                stream_in_r
+                                    .send(PlayerMsg::Decoder((decoder, stream_params)))
+                                    .ok();
+                            }
+                            None => {
+                                stream_in_r.send(PlayerMsg::NotSupported).ok();
+                            }
+                        }
+                    });
                 }
             }
         }
@@ -361,9 +380,7 @@ fn process_stream_msg(
         }
         PlayerMsg::Drained => {
             info!("End of track");
-            if let Some(mut old_stream) = output.shift() {
-                old_stream.disconnect();
-            }
+            output.shift();
             if output.unpause() {
                 info!("Sending new track started");
                 if let Ok(mut status) = status.lock() {
@@ -405,19 +422,29 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
-        PlayerMsg::StreamEstablished(stream) => {
+        PlayerMsg::StreamEstablished => {
             if let Ok(mut status) = status.lock() {
                 info!("Sending stream established");
                 let msg = status.make_status_message(StatusCode::StreamEstablished);
                 slim_tx_in.send(msg).ok();
             }
-            output.enqueue(stream, stream_in);
         }
         PlayerMsg::TrackStarted => {
             info!("Sending track started");
             if let Ok(mut status) = status.lock() {
                 let msg = status.make_status_message(StatusCode::TrackStarted);
                 slim_tx_in.send(msg).ok();
+            }
+        }
+        PlayerMsg::Decoder((decoder, stream_params)) => {
+            if let Some((stream, autostart)) = output.make_stream(
+                decoder,
+                stream_in.clone(),
+                status.clone(),
+                stream_params,
+            ) {
+                output.enqueue(stream, autostart, stream_in.clone());
+                stream_in.send(PlayerMsg::StreamEstablished).ok();
             }
         }
     }

@@ -1,39 +1,103 @@
 use std::{
-    borrow::BorrowMut,
     cell::RefCell,
-    io::Write,
-    net::{Ipv4Addr, TcpStream},
     ops::Deref,
     rc::Rc,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use anyhow::anyhow;
-
-use crossbeam::{
-    atomic::AtomicCell,
-    channel::{bounded, Sender},
-};
+use crossbeam::channel::{bounded, Sender};
 use libpulse_binding::{
-    self as pa,
     callbacks::ListResult,
-    context::{Context, FlagSet as CxFlagSet},
+    context::{Context, FlagSet as CxFlagSet, State},
     error::PAErr,
     mainloop::threaded::Mainloop,
+    operation::Operation,
     sample::Spec,
-    stream::{FlagSet as SmFlagSet, Stream},
+    stream::SeekMode,
+    time::MicroSeconds,
 };
-use log::{error, info};
-use slimproto::{
-    status::{StatusCode, StatusData},
-    ClientMessage,
-};
+use log::warn;
+use slimproto::status::StatusData;
 
 use crate::{
-    decode::{Decoder, DecoderError},
-    PlayerMsg,
+    decode::{AudioFormat, Decoder, DecoderError},
+    PlayerMsg, StreamParams,
 };
+
+// type Callback = Box<dyn FnMut() + Send + Sync + 'static>;
+
+pub struct Stream {
+    inner: Rc<RefCell<libpulse_binding::stream::Stream>>,
+}
+
+impl Stream {
+    fn new(cx: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
+        let spec = Spec {
+            format: match decoder.format() {
+                AudioFormat::I16 | AudioFormat::U16 => libpulse_binding::sample::Format::S16NE,
+                AudioFormat::I32 | AudioFormat::U32 => libpulse_binding::sample::Format::S32NE,
+                AudioFormat::F32 => libpulse_binding::sample::Format::FLOAT32NE,
+            },
+            rate: decoder.sample_rate(),
+            channels: decoder.channels(),
+        };
+
+        // Create a pulseaudio stream
+        let stream = match libpulse_binding::stream::Stream::new(
+            &mut (*cx).borrow_mut(),
+            "Music",
+            &spec,
+            None,
+        ) {
+            Some(stream) => stream,
+            None => {
+                return None;
+            }
+        };
+
+        Some(Self {
+            inner: Rc::new(RefCell::new(stream)),
+        })
+    }
+
+    fn set_write_callback(&mut self, callback: Box<dyn FnMut(usize) + 'static>) {
+        (*self.inner)
+            .borrow_mut()
+            .set_write_callback(Some(callback));
+    }
+
+    fn write_copy(&mut self, data: &[u8], offset: i64, seek: SeekMode) -> Result<(), PAErr> {
+        (*self.inner).borrow_mut().write_copy(data, offset, seek)
+    }
+
+    fn update_timing_info(
+        &mut self,
+        callback: Option<Box<dyn FnMut(bool) + 'static>>,
+    ) -> Operation<dyn FnMut(bool)> {
+        (*self.inner).borrow_mut().update_timing_info(callback)
+    }
+
+    fn get_time(&self) -> Result<Option<MicroSeconds>, PAErr> {
+        (*self.inner).borrow_mut().get_time()
+    }
+
+    pub fn disconnect(&mut self) -> Result<(), PAErr> {
+        (*self.inner).borrow_mut().disconnect()
+    }
+
+    fn play(&mut self) {
+        (*self.inner).borrow_mut().uncork(None);
+    }
+
+    fn pause(&mut self) {
+        (*self.inner).borrow_mut().cork(None);
+    }
+
+    fn unpause(&mut self) {
+        self.play();
+    }
+}
 
 pub struct AudioOutput {
     mainloop: Rc<RefCell<Mainloop>>,
@@ -43,14 +107,14 @@ pub struct AudioOutput {
 }
 
 impl AudioOutput {
-    pub fn try_new() -> Result<Self, PAErr> {
+    pub fn try_new() -> anyhow::Result<Self> {
         let ml = Rc::new(RefCell::new(
-            Mainloop::new().ok_or(pa::error::Code::ConnectionRefused)?,
+            Mainloop::new().ok_or(libpulse_binding::error::Code::ConnectionRefused)?,
         ));
 
         let cx = Rc::new(RefCell::new(
             Context::new((*ml).borrow_mut().deref(), "Vibe")
-                .ok_or(pa::error::Code::ConnectionRefused)?,
+                .ok_or(libpulse_binding::error::Code::ConnectionRefused)?,
         ));
 
         // Context state change callback
@@ -62,9 +126,7 @@ impl AudioOutput {
                 .set_state_callback(Some(Box::new(move || {
                     let state = unsafe { (*cx_ref.as_ptr()).get_state() };
                     match state {
-                        pa::context::State::Ready
-                        | pa::context::State::Terminated
-                        | pa::context::State::Failed => unsafe {
+                        State::Ready | State::Terminated | State::Failed => unsafe {
                             (*ml_ref.as_ptr()).signal(false);
                         },
                         _ => {}
@@ -79,15 +141,13 @@ impl AudioOutput {
         // Wait for context to be ready
         loop {
             match cx.borrow().get_state() {
-                pa::context::State::Ready => {
+                State::Ready => {
                     break;
                 }
-                pa::context::State::Failed | pa::context::State::Terminated => {
+                State::Failed | State::Terminated => {
                     (*ml).borrow_mut().unlock();
                     (*ml).borrow_mut().stop();
-                    return Err(pa::error::PAErr(
-                        pa::error::Code::ConnectionTerminated as i32,
-                    ));
+                    return Err(anyhow!("Unable to connect with pulseaudio"));
                 }
                 _ => (*ml).borrow_mut().wait(),
             }
@@ -106,215 +166,195 @@ impl AudioOutput {
 
     pub fn make_stream(
         &mut self,
-        server_ip: Ipv4Addr,
-        default_ip: &Ipv4Addr,
-        server_port: u16,
-        http_headers: String,
-        status: Arc<Mutex<StatusData>>,
-        slim_tx: Sender<ClientMessage>,
+        mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
-        threshold: u32,
-        format: slimproto::proto::Format,
-        pcmsamplerate: slimproto::proto::PcmSampleRate,
-        pcmchannels: slimproto::proto::PcmChannels,
-        skip: Arc<AtomicCell<Duration>>,
-        volume: Arc<Mutex<Vec<f32>>>,
-        output_threshold: Duration,
-    ) -> anyhow::Result<()> {
-        // The LMS sends an ip of 0, 0, 0, 0 when it wants us to default to it
-        let ip = if server_ip.is_unspecified() {
-            *default_ip
-        } else {
-            server_ip
-        };
+        status: Arc<Mutex<StatusData>>,
+        stream_params: StreamParams,
+    ) -> Option<(Rc<RefCell<Stream>>, slimproto::proto::AutoStart)> {
+        // Create an audio buffer to hold raw u8 samples
+        let threshold_samples = (stream_params.output_threshold.as_millis()
+            * decoder.channels() as u128
+            * decoder.sample_rate() as u128
+            / 1000)
+            * decoder.format().size_of() as u128;
+        let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
 
-        let mut data_stream = TcpStream::connect((ip, server_port))?;
-        data_stream.write(http_headers.as_bytes())?;
-        data_stream.flush()?;
-
-        if let Ok(mut status) = status.lock() {
-            info!("Sending stream connected");
-            let msg = status.make_status_message(StatusCode::Connect);
-            slim_tx.send(msg).ok();
+        // Prefill audio buffer to threshold
+        match decoder.fill_buf(&mut audio_buf, 1024 as usize, stream_params.volume.clone()) {
+            Ok(()) => {}
+            Err(DecoderError::EndOfDecode) => {
+                stream_in.send(PlayerMsg::EndOfDecode).ok();
+            }
+            Err(DecoderError::StreamError(e)) => {
+                warn!("Error reading data stream: {}", e);
+                stream_in.send(PlayerMsg::NotSupported).ok();
+                return None;
+            }
         }
 
-        if let Some(mut decoder) = Decoder::try_new(
-            data_stream,
-            status.clone(),
-            slim_tx.clone(),
-            threshold,
-            format,
-            pcmsamplerate,
-            pcmchannels,
-        )? {
-            // Work with a sample format of F32
-            // TODO: use data native format
-            let sample_format = pa::sample::Format::FLOAT32NE;
-
-            // Create a spec for the pa stream
-            let spec = Spec {
-                format: sample_format,
-                rate: decoder.sample_rate(),
-                channels: decoder.channels(),
-            };
-
-            // Create a pulseaudio stream
-            let cx = self.context.clone();
-            let pa_stream = Rc::new(RefCell::new(
-                match Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None) {
-                    Some(stream) => stream,
-                    None => {
-                        if let Ok(mut status) = status.lock() {
-                            let msg = status.make_status_message(StatusCode::NotSupported);
-                            slim_tx.send(msg).ok();
-                        }
-                        return Err(anyhow!("Failed to make stream"));
-                    }
-                },
-            ));
-
-            // Create an audio buffer to hold raw u8 samples
-            let threshold_samples = (output_threshold.as_millis()
-                * decoder.channels() as u128
-                * decoder.sample_rate() as u128
-                / 1000)
-                * 4;
-            let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
-
-            // Prefill audio buffer to threshold
-            match decoder.fill_buf(&mut audio_buf, threshold_samples as usize, volume.clone()) {
-                Ok(()) => {}
-                Err(DecoderError::EndOfDecode) => {
-                    stream_in.send(PlayerMsg::EndOfDecode).ok();
+        (*self.mainloop).borrow_mut().lock();
+        let stream = Rc::new(RefCell::new(
+            match Stream::new(self.context.clone(), &decoder) {
+                Some(stream) => stream,
+                None => {
+                    stream_in.send(PlayerMsg::NotSupported).ok();
+                    return None;
                 }
-                Err(DecoderError::StreamError(e)) => {
-                    error!("Error reading data stream: {}", e);
-                    if let Ok(mut status) = status.lock() {
-                        let msg = status.make_status_message(StatusCode::NotSupported);
-                        slim_tx.send(msg).ok();
-                    }
-                    return Err(e.into());
-                }
-            }
+            },
+        ));
+        (*self.mainloop).borrow_mut().unlock();
 
-            // Add callback to pa_stream to feed music
-            let status_ref = status.clone();
-            let sm_ref = Rc::downgrade(&pa_stream);
-            (*pa_stream)
-                .borrow_mut()
-                .set_write_callback(Some(Box::new(move |len| {
-                    match decoder.fill_buf(&mut audio_buf, len, volume.clone()) {
+        // Add callback to pa_stream to feed music
+        let stream_in_r = stream_in.clone();
+        let mut draining = false;
+        let mut drained = false;
+        let sm_ref = Rc::downgrade(&stream);
+        (*self.mainloop).borrow_mut().lock();
+        (*stream)
+            .borrow_mut()
+            .set_write_callback(Box::new(move |len| {
+                if !drained {
+                    match decoder.fill_buf(
+                        &mut audio_buf,
+                        len as usize,
+                        stream_params.volume.clone(),
+                    ) {
                         Ok(()) => {}
                         Err(DecoderError::EndOfDecode) => {
-                            stream_in.send(PlayerMsg::EndOfDecode).ok();
+                            if !draining {
+                                stream_in_r.send(PlayerMsg::EndOfDecode).ok();
+                                draining = true;
+                            }
                         }
                         Err(DecoderError::StreamError(e)) => {
-                            error!("Error reading data stream: {}", e);
-                            if let Ok(mut status) = status.lock() {
-                                let msg = status.make_status_message(StatusCode::NotSupported);
-                                slim_tx.send(msg).ok();
-                            }
+                            warn!("Error reading data stream: {}", e);
+                            stream_in_r.send(PlayerMsg::NotSupported).ok();
                             return;
                         }
                     }
 
-                    let buf_len = if audio_buf.len() < len {
-                        audio_buf.len()
-                    } else {
-                        len
-                    };
+                    if audio_buf.len() > 0 {
+                        let buf_len = if audio_buf.len() < len {
+                            audio_buf.len()
+                        } else {
+                            len
+                        };
 
-                    let offset = match skip.take() {
-                        dur if dur.is_zero() => 0i64,
-                        dur => {
-                            let samples = dur.as_millis() as f64 * spec.rate as f64 / 1000.0;
-                            samples.round() as i64 * spec.channels as i64 * 4
-                        }
-                    };
-
-                    if let Some(sm) = sm_ref.upgrade() {
-                        unsafe {
-                            (*sm.as_ptr())
-                                .write_copy(
-                                    &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                                    offset,
-                                    pa::stream::SeekMode::Relative,
-                                )
-                                .ok();
-                            (*sm.as_ptr()).update_timing_info(None);
-
-                            if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
-                                if let Ok(mut status) = status_ref.lock() {
-                                    status
-                                        .set_elapsed_milli_seconds(stream_time.as_millis() as u32);
-                                    status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                                    status.set_output_buffer_size(audio_buf.capacity() as u32);
-                                    status.set_output_buffer_fullness(audio_buf.len() as u32);
-                                };
+                        let offset = match stream_params.skip.take() {
+                            dur if dur.is_zero() => 0i64,
+                            dur => {
+                                let samples =
+                                    dur.as_millis() as f64 * decoder.sample_rate() as f64 / 1000.0;
+                                samples.round() as i64 * decoder.channels() as i64 * 4
                             }
                         };
+
+                        if let Some(sm) = sm_ref.upgrade() {
+                            unsafe {
+                                (*sm.as_ptr())
+                                    .write_copy(
+                                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                                        offset,
+                                        SeekMode::Relative,
+                                    )
+                                    .ok();
+                                (*sm.as_ptr()).update_timing_info(None);
+
+                                if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
+                                    if let Ok(mut status) = status.lock() {
+                                        status.set_elapsed_milli_seconds(
+                                            stream_time.as_millis() as u32
+                                        );
+                                        status.set_elapsed_seconds(stream_time.as_secs() as u32);
+                                        status.set_output_buffer_size(audio_buf.capacity() as u32);
+                                        status.set_output_buffer_fullness(audio_buf.len() as u32);
+                                    };
+                                }
+                            };
+                        }
+                    } else if draining {
+                        stream_in_r.send(PlayerMsg::Drained).ok();
+                        drained = true;
                     }
-                })));
-            self.next_up = Some(pa_stream);
-            return Ok(());
-        }
-        Err(anyhow::Error::new(DecoderError::StreamError(
-            symphonia::core::errors::Error::DecodeError("Unable to decode"),
-        )))
+                }
+            }));
+
+        (*self.mainloop).borrow_mut().unlock();
+        stream_in.send(PlayerMsg::StreamEstablished).ok();
+        Some((stream, stream_params.autostart))
     }
 
-    fn connect_stream(&mut self, device: &Option<String>) -> Result<(), PAErr> {
-        (*self.mainloop).borrow_mut().lock();
-
-        // Stream state change callback
-        {
-            let ml_ref = self.mainloop.clone();
-            let sm_ref = sm.clone();
-            sm.borrow_mut().set_state_callback(Some(Box::new(move || {
-                let state = unsafe { (*sm_ref.as_ptr()).get_state() };
-                match state {
-                    pa::stream::State::Ready
-                    | pa::stream::State::Failed
-                    | pa::stream::State::Terminated => unsafe {
-                        (*ml_ref.as_ptr()).signal(false);
-                    },
-                    _ => {}
-                }
-            })));
-        }
-
-        let flags = SmFlagSet::START_CORKED;
-
-        sm.borrow_mut()
-            .connect_playback(device.as_deref(), None, flags, None, None)?;
-
-        // Wait for stream to be ready
-        loop {
-            match sm.borrow_mut().get_state() {
-                pa::stream::State::Ready => {
-                    break;
-                }
-                pa::stream::State::Failed | pa::stream::State::Terminated => {
-                    ml.borrow_mut().unlock();
-                    ml.borrow_mut().stop();
-                    return Err(pa::error::PAErr(
-                        pa::error::Code::ConnectionTerminated as i32,
-                    ));
-                }
-                _ => {
-                    ml.borrow_mut().wait();
-                }
+    pub fn enqueue(
+        &mut self,
+        stream: Rc<RefCell<Stream>>,
+        autostart: slimproto::proto::AutoStart,
+        stream_in: Sender<PlayerMsg>,
+    ) {
+        if self.playing.is_some() {
+            self.next_up = Some(stream);
+        } else {
+            self.playing = Some(stream);
+            if autostart == slimproto::proto::AutoStart::Auto {
+                stream_in.send(PlayerMsg::TrackStarted).ok();
+                self.play();
             }
         }
-
-        sm.borrow_mut().set_state_callback(None);
-        ml.borrow_mut().unlock();
-
-        Ok(())
     }
-    pub fn play_next(&mut self) {
+
+    pub fn play(&mut self) -> bool {
+        if let Some(ref stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            (*stream.as_ref()).borrow_mut().play();
+            (*self.mainloop).borrow_mut().unlock();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn unpause(&mut self) -> bool {
+        if let Some(ref mut stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            (*stream.as_ref()).borrow_mut().unpause();
+            (*self.mainloop).borrow_mut().unlock();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn pause(&mut self) -> bool {
+        if let Some(ref mut stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            (*stream.as_ref()).borrow_mut().pause();
+            (*self.mainloop).borrow_mut().unlock();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(ref mut stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            (*stream.as_ref()).borrow_mut().disconnect().ok();
+            (*self.mainloop).borrow_mut().unlock();
+        }
+        self.next_up = None;
+        self.playing = None;
+    }
+
+    pub fn flush(&mut self) {
+        self.stop();
+    }
+
+    pub fn shift(&mut self) -> Option<Rc<RefCell<Stream>>> {
+        if let Some(ref old_stream) = self.playing {
+            (*old_stream.as_ref()).borrow_mut().disconnect().ok();
+        }
+        let old_stream = self.playing.take();
         self.playing = self.next_up.take();
-        if let Some(stream) = self.playing {}
+        old_stream
     }
 }
 
@@ -325,7 +365,7 @@ impl Drop for AudioOutput {
 }
 
 pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
-    let mut output = AudioOutput::try_new()?;
+    let output = AudioOutput::try_new()?;
     let mut ret = Vec::new();
     let (s, r) = bounded(1);
 
@@ -349,55 +389,3 @@ pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
 
     Ok(ret)
 }
-// pub fn setup() -> Result<(Rc<RefCell<Mainloop>>, Rc<RefCell<Context>>), PAErr> {
-//     let ml = Rc::new(RefCell::new(
-//         Mainloop::new().ok_or(pa::error::Code::ConnectionRefused)?,
-//     ));
-
-//     let cx = Rc::new(RefCell::new(
-//         Context::new(ml.borrow_mut().deref(), "Vibe").ok_or(pa::error::Code::ConnectionRefused)?,
-//     ));
-
-//     // Context state change callback
-//     {
-//         let ml_ref = ml.clone();
-//         let cx_ref = cx.clone();
-//         cx.borrow_mut().set_state_callback(Some(Box::new(move || {
-//             let state = unsafe { (*cx_ref.as_ptr()).get_state() };
-//             match state {
-//                 pa::context::State::Ready
-//                 | pa::context::State::Terminated
-//                 | pa::context::State::Failed => unsafe {
-//                     (*ml_ref.as_ptr()).signal(false);
-//                 },
-//                 _ => {}
-//             }
-//         })))
-//     }
-
-//     cx.borrow_mut().connect(None, CxFlagSet::NOFLAGS, None)?;
-//     ml.borrow_mut().lock();
-//     ml.borrow_mut().start()?;
-
-//     // Wait for context to be ready
-//     loop {
-//         match cx.borrow().get_state() {
-//             pa::context::State::Ready => {
-//                 break;
-//             }
-//             pa::context::State::Failed | pa::context::State::Terminated => {
-//                 ml.borrow_mut().unlock();
-//                 ml.borrow_mut().stop();
-//                 return Err(pa::error::PAErr(
-//                     pa::error::Code::ConnectionTerminated as i32,
-//                 ));
-//             }
-//             _ => ml.borrow_mut().wait(),
-//         }
-//     }
-
-//     cx.borrow_mut().set_state_callback(None);
-//     ml.borrow_mut().unlock();
-
-//     Ok((ml, cx))
-// }

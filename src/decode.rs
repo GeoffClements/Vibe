@@ -2,9 +2,10 @@ use std::{
     io::Write,
     net::{Ipv4Addr, TcpStream},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
-use crossbeam::channel::Sender;
+use crossbeam::{atomic::AtomicCell, channel::Sender};
 use log::warn;
 use slimproto::{
     buffer::SlimBuffer,
@@ -21,7 +22,7 @@ use symphonia::core::{
     sample::SampleFormat,
 };
 
-use crate::PlayerMsg;
+use crate::{PlayerMsg, StreamParams};
 
 #[derive(Debug)]
 pub enum DecoderError {
@@ -219,9 +220,11 @@ impl Decoder {
                     audio_buffer
                         .to_mut()
                         .transform(|s| (s as f32 * vol).round() as u16);
+                    let mut samples = audio_buffer.make_equivalent();
+                    audio_buffer.convert::<i16>(&mut samples);
 
-                    let mut sample_buffer = RawSampleBuffer::<u16>::new(capacity as u64, spec);
-                    sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
+                    let mut sample_buffer = RawSampleBuffer::<i16>::new(capacity as u64, spec);
+                    sample_buffer.copy_interleaved_ref(samples.as_audio_buffer_ref());
                     buffer.extend_from_slice(sample_buffer.as_bytes());
                 }
                 AudioBufferRef::S16(mut audio_buffer) => {
@@ -233,11 +236,15 @@ impl Decoder {
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
                     buffer.extend_from_slice(sample_buffer.as_bytes());
                 }
-                AudioBufferRef::F32(mut audio_buffer) => {
-                    audio_buffer.to_mut().transform(|s| s * vol);
+                AudioBufferRef::U32(mut audio_buffer) => {
+                    audio_buffer
+                        .to_mut()
+                        .transform(|s| (s as f32 * vol).round() as u32);
+                    let mut samples = audio_buffer.make_equivalent();
+                    audio_buffer.convert::<i32>(&mut samples);
 
-                    let mut sample_buffer = RawSampleBuffer::<f32>::new(capacity as u64, spec);
-                    sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
+                    let mut sample_buffer = RawSampleBuffer::<i32>::new(capacity as u64, spec);
+                    sample_buffer.copy_interleaved_ref(samples.as_audio_buffer_ref());
                     buffer.extend_from_slice(sample_buffer.as_bytes());
                 }
                 AudioBufferRef::S32(mut audio_buffer) => {
@@ -249,12 +256,10 @@ impl Decoder {
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
                     buffer.extend_from_slice(sample_buffer.as_bytes());
                 }
-                AudioBufferRef::U32(mut audio_buffer) => {
-                    audio_buffer
-                        .to_mut()
-                        .transform(|s| (s as f32 * vol).round() as u32);
+                AudioBufferRef::F32(mut audio_buffer) => {
+                    audio_buffer.to_mut().transform(|s| s * vol);
 
-                    let mut sample_buffer = RawSampleBuffer::<u32>::new(capacity as u64, spec);
+                    let mut sample_buffer = RawSampleBuffer::<f32>::new(capacity as u64, spec);
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
                     buffer.extend_from_slice(sample_buffer.as_bytes());
                 }
@@ -285,7 +290,11 @@ pub fn make_decoder(
     format: slimproto::proto::Format,
     pcmsamplerate: slimproto::proto::PcmSampleRate,
     pcmchannels: slimproto::proto::PcmChannels,
-) -> Option<Decoder> {
+    autostart: slimproto::proto::AutoStart,
+    volume: Arc<Mutex<Vec<f32>>>,
+    skip: Arc<AtomicCell<Duration>>,
+    output_threshold: Duration,
+) -> Option<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
         default_ip
     } else {
@@ -314,7 +323,18 @@ pub fn make_decoder(
     );
     stream_in.send(PlayerMsg::BufferThreshold).ok();
 
-    Decoder::try_new(mss, format, pcmsamplerate, pcmchannels)
+    match Decoder::try_new(mss, format, pcmsamplerate, pcmchannels) {
+        Some(decoder) => Some((
+            decoder,
+            StreamParams {
+                autostart,
+                volume,
+                skip,
+                output_threshold,
+            },
+        )),
+        None => None,
+    }
 }
 
 fn make_connection(ip: Ipv4Addr, port: u16, http_headers: String) -> anyhow::Result<TcpStream> {

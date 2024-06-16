@@ -1,6 +1,6 @@
 [package]
 name = "Vibe_Player"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
 description = "A music player for the Logitech Media Server"
 license = "MIT"
@@ -26,7 +26,7 @@ default-features = false
 features = ["stderr", "colors"]
 
 [features]
-default = ["dummy"]
+default = ["pulse"]
 pulse = ["dep:libpulse-binding"]
 dummy = []
 

@@ -231,6 +231,8 @@ impl Decoder {
                     audio_buffer
                         .to_mut()
                         .transform(|s| (s as f32 * vol).round() as i16);
+                    let mut samples = audio_buffer.make_equivalent();
+                    audio_buffer.convert::<i16>(&mut samples);
 
                     let mut sample_buffer = RawSampleBuffer::<i16>::new(capacity as u64, spec);
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
@@ -251,6 +253,8 @@ impl Decoder {
                     audio_buffer
                         .to_mut()
                         .transform(|s| (s as f32 * vol).round() as i32);
+                    let mut samples = audio_buffer.make_equivalent();
+                    audio_buffer.convert::<i32>(&mut samples);
 
                     let mut sample_buffer = RawSampleBuffer::<i32>::new(capacity as u64, spec);
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());
@@ -258,6 +262,8 @@ impl Decoder {
                 }
                 AudioBufferRef::F32(mut audio_buffer) => {
                     audio_buffer.to_mut().transform(|s| s * vol);
+                    let mut samples = audio_buffer.make_equivalent();
+                    audio_buffer.convert::<f32>(&mut samples);
 
                     let mut sample_buffer = RawSampleBuffer::<f32>::new(capacity as u64, spec);
                     sample_buffer.copy_interleaved_ref(audio_buffer.as_audio_buffer_ref());

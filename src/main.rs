@@ -139,7 +139,7 @@ fn main() -> anyhow::Result<()> {
         // let mut volume = ChannelVolumes::default();
         // volume.set_len(2);
 
-        let (stream_in, stream_out) = bounded(1);
+        let (stream_in, stream_out) = bounded(10);
 
         let mut select = Select::new();
         let slim_idx = select.recv(&slim_rx_out);
@@ -175,6 +175,7 @@ fn main() -> anyhow::Result<()> {
                         slim_tx_in.clone(),
                         &mut output,
                         stream_in.clone(),
+                        &cli.device,
                     );
                 }
                 _ => {}
@@ -369,6 +370,7 @@ fn process_stream_msg(
     slim_tx_in: Sender<ClientMessage>,
     output: &mut AudioOutput,
     stream_in: Sender<PlayerMsg>,
+    device: &Option<String>,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
@@ -442,9 +444,10 @@ fn process_stream_msg(
                 stream_in.clone(),
                 status.clone(),
                 stream_params,
+                device,
             ) {
-                output.enqueue(stream, autostart, stream_in.clone());
                 stream_in.send(PlayerMsg::StreamEstablished).ok();
+                output.enqueue(stream, autostart, stream_in.clone());
             }
         }
     }

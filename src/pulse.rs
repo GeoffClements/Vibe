@@ -3,6 +3,7 @@ use std::{
     ops::Deref,
     rc::Rc,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -10,12 +11,14 @@ use crossbeam::channel::{bounded, Sender};
 use libpulse_binding::{
     callbacks::ListResult,
     context::{Context, FlagSet as CxFlagSet, State},
+    def::BufferAttr,
     error::PAErr,
     mainloop::threaded::Mainloop,
     operation::Operation,
     sample::Spec,
-    stream::SeekMode,
+    stream::{FlagSet as SmFlagSet, SeekMode},
     time::MicroSeconds,
+    volume::ChannelVolumes,
 };
 use log::warn;
 use slimproto::status::StatusData;
@@ -82,12 +85,34 @@ impl Stream {
         (*self.inner).borrow_mut().get_time()
     }
 
-    pub fn disconnect(&mut self) -> Result<(), PAErr> {
+    fn disconnect(&mut self) -> Result<(), PAErr> {
         (*self.inner).borrow_mut().disconnect()
     }
 
+    fn set_state_callback(&mut self, callback: Option<Box<dyn FnMut() + 'static>>) {
+        (*self.inner).borrow_mut().set_state_callback(callback)
+    }
+
+    fn connect_playback(
+        &mut self,
+        dev: Option<&str>,
+        attr: Option<&BufferAttr>,
+        flags: SmFlagSet,
+        volume: Option<&ChannelVolumes>,
+        sync_stream: Option<&mut libpulse_binding::stream::Stream>,
+    ) -> Result<(), PAErr> {
+        (*self.inner)
+            .borrow_mut()
+            .connect_playback(dev, attr, flags, volume, sync_stream)
+    }
+
+    fn get_state(&self) -> libpulse_binding::stream::State {
+        (*self.inner).borrow_mut().get_state()
+    }
+
     fn play(&mut self) {
-        (*self.inner).borrow_mut().uncork(None);
+        let op = (*self.inner).borrow_mut().uncork(None);
+        self.do_op(op);
     }
 
     fn pause(&mut self) {
@@ -96,6 +121,14 @@ impl Stream {
 
     fn unpause(&mut self) {
         self.play();
+    }
+
+    fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
+        std::thread::spawn(move || {
+            while op.get_state() == libpulse_binding::operation::State::Running {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
     }
 }
 
@@ -170,6 +203,7 @@ impl AudioOutput {
         stream_in: Sender<PlayerMsg>,
         status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
+        device: &Option<String>,
     ) -> Option<(Rc<RefCell<Stream>>, slimproto::proto::AutoStart)> {
         // Create an audio buffer to hold raw u8 samples
         let threshold_samples = (stream_params.output_threshold.as_millis()
@@ -278,10 +312,70 @@ impl AudioOutput {
                     }
                 }
             }));
-
         (*self.mainloop).borrow_mut().unlock();
-        stream_in.send(PlayerMsg::StreamEstablished).ok();
+
+        // Connect playback stream
+        if self.connect_stream(stream.clone(), device).is_err() {
+            return None;
+        }
+
         Some((stream, stream_params.autostart))
+    }
+
+    fn connect_stream(
+        &mut self,
+        stream: Rc<RefCell<Stream>>,
+        device: &Option<String>,
+    ) -> anyhow::Result<()> {
+        (*self.mainloop).borrow_mut().lock();
+
+        // Stream state change callback
+        {
+            let ml_ref = self.mainloop.clone();
+            let sm_ref = self.context.clone();
+            stream
+                .borrow_mut()
+                .set_state_callback(Some(Box::new(move || {
+                    let state = unsafe { (*sm_ref.as_ptr()).get_state() };
+                    match state {
+                        State::Ready | State::Failed | State::Terminated => unsafe {
+                            (*ml_ref.as_ptr()).signal(false);
+                        },
+                        _ => {}
+                    }
+                })));
+        }
+
+        let flags = SmFlagSet::START_CORKED;
+
+        stream
+            .borrow_mut()
+            .connect_playback(device.as_deref(), None, flags, None, None)?;
+
+        // Wait for stream to be ready
+        loop {
+            match stream.borrow_mut().get_state() {
+                libpulse_binding::stream::State::Ready => {
+                    break;
+                }
+                libpulse_binding::stream::State::Failed
+                | libpulse_binding::stream::State::Terminated => {
+                    (*self.mainloop).borrow_mut().unlock();
+                    (*self.mainloop).borrow_mut().stop();
+                    return Err(anyhow!(libpulse_binding::error::PAErr(
+                        libpulse_binding::error::Code::ConnectionTerminated as i32,
+                    )));
+                }
+                _ => {
+                    (*self.mainloop).borrow_mut().wait();
+                }
+            }
+        }
+
+        stream.borrow_mut().set_state_callback(None);
+        (*self.mainloop).borrow_mut().unlock();
+
+        Ok(())
     }
 
     pub fn enqueue(

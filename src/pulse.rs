@@ -64,6 +64,10 @@ impl Stream {
         })
     }
 
+    fn into_inner(self) -> Rc<RefCell<libpulse_binding::stream::Stream>> {
+        self.inner
+    }
+
     fn set_write_callback(&mut self, callback: Box<dyn FnMut(usize) + 'static>) {
         (*self.inner)
             .borrow_mut()
@@ -219,6 +223,11 @@ impl AudioOutput {
             Err(DecoderError::EndOfDecode) => {
                 stream_in.send(PlayerMsg::EndOfDecode).ok();
             }
+            Err(DecoderError::Unhandled) => {
+                warn!("Unhandled format");
+                stream_in.send(PlayerMsg::NotSupported).ok();
+                return None;
+            }
             Err(DecoderError::StreamError(e)) => {
                 warn!("Error reading data stream: {}", e);
                 stream_in.send(PlayerMsg::NotSupported).ok();
@@ -259,6 +268,11 @@ impl AudioOutput {
                                 stream_in_r.send(PlayerMsg::EndOfDecode).ok();
                                 draining = true;
                             }
+                        }
+                        Err(DecoderError::Unhandled) => {
+                            warn!("Unhandled format");
+                            stream_in.send(PlayerMsg::NotSupported).ok();
+                            return;
                         }
                         Err(DecoderError::StreamError(e)) => {
                             warn!("Error reading data stream: {}", e);
@@ -306,7 +320,9 @@ impl AudioOutput {
                                 }
                             };
                         }
-                    } else if draining {
+                    }
+
+                    if draining && audio_buf.len() == 0 {
                         stream_in_r.send(PlayerMsg::Drained).ok();
                         drained = true;
                     }
@@ -378,6 +394,17 @@ impl AudioOutput {
         Ok(())
     }
 
+    fn play(&mut self) -> bool {
+        if let Some(ref stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            (*stream.as_ref()).borrow_mut().play();
+            (*self.mainloop).borrow_mut().unlock();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn enqueue(
         &mut self,
         stream: Rc<RefCell<Stream>>,
@@ -392,17 +419,6 @@ impl AudioOutput {
                 stream_in.send(PlayerMsg::TrackStarted).ok();
                 self.play();
             }
-        }
-    }
-
-    pub fn play(&mut self) -> bool {
-        if let Some(ref stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            (*stream.as_ref()).borrow_mut().play();
-            (*self.mainloop).borrow_mut().unlock();
-            true
-        } else {
-            false
         }
     }
 
@@ -442,13 +458,22 @@ impl AudioOutput {
         self.stop();
     }
 
-    pub fn shift(&mut self) -> Option<Rc<RefCell<Stream>>> {
-        if let Some(ref old_stream) = self.playing {
-            (*old_stream.as_ref()).borrow_mut().disconnect().ok();
-        }
+    pub fn shift(&mut self) {
         let old_stream = self.playing.take();
         self.playing = self.next_up.take();
-        old_stream
+
+        if let Some(old_stream) = old_stream {
+            if let Some(old_stream) = Rc::into_inner(old_stream) {
+                let old_stream = old_stream.into_inner();
+                if let Some(pa_stream) = Rc::into_inner(old_stream.into_inner()) {
+                    let mut pa_stream = pa_stream.into_inner();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(1));
+                        pa_stream.disconnect().ok();
+                    });
+                };
+            }
+        }
     }
 }
 

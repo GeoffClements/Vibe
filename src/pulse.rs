@@ -210,11 +210,11 @@ impl AudioOutput {
         device: &Option<String>,
     ) -> Option<(Rc<RefCell<Stream>>, slimproto::proto::AutoStart)> {
         // Create an audio buffer to hold raw u8 samples
-        let threshold_samples = (stream_params.output_threshold.as_millis()
+        let threshold_samples = decoder.sample_rate() as u128
             * decoder.channels() as u128
-            * decoder.sample_rate() as u128
-            / 1000)
-            * decoder.format().size_of() as u128;
+            * decoder.format().size_of() as u128
+            * stream_params.output_threshold.as_millis()
+            / 1000;
         let mut audio_buf = Vec::with_capacity(threshold_samples as usize);
 
         // Prefill audio buffer to threshold

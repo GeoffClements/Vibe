@@ -256,76 +256,73 @@ impl AudioOutput {
         (*stream)
             .borrow_mut()
             .set_write_callback(Box::new(move |len| {
-                if !drained {
-                    match decoder.fill_buf(
-                        &mut audio_buf,
-                        len as usize,
-                        stream_params.volume.clone(),
-                    ) {
-                        Ok(()) => {}
-                        Err(DecoderError::EndOfDecode) => {
-                            if !draining {
-                                stream_in_r.send(PlayerMsg::EndOfDecode).ok();
-                                draining = true;
+                if drained {
+                    return;
+                }
+                
+                match decoder.fill_buf(&mut audio_buf, len as usize, stream_params.volume.clone()) {
+                    Ok(()) => {}
+                    Err(DecoderError::EndOfDecode) => {
+                        if !draining {
+                            stream_in_r.send(PlayerMsg::EndOfDecode).ok();
+                            draining = true;
+                        }
+                    }
+                    Err(DecoderError::Unhandled) => {
+                        warn!("Unhandled format");
+                        stream_in.send(PlayerMsg::NotSupported).ok();
+                        return;
+                    }
+                    Err(DecoderError::StreamError(e)) => {
+                        warn!("Error reading data stream: {}", e);
+                        stream_in_r.send(PlayerMsg::NotSupported).ok();
+                        return;
+                    }
+                }
+
+                if audio_buf.len() > 0 {
+                    let buf_len = if audio_buf.len() < len {
+                        audio_buf.len()
+                    } else {
+                        len
+                    };
+
+                    let offset = match stream_params.skip.take() {
+                        dur if dur.is_zero() => 0i64,
+                        dur => {
+                            let samples =
+                                dur.as_millis() as f64 * decoder.sample_rate() as f64 / 1000.0;
+                            samples.round() as i64 * decoder.channels() as i64 * 4
+                        }
+                    };
+
+                    if let Some(sm) = sm_ref.upgrade() {
+                        unsafe {
+                            (*sm.as_ptr())
+                                .write_copy(
+                                    &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                                    offset,
+                                    SeekMode::Relative,
+                                )
+                                .ok();
+                            (*sm.as_ptr()).update_timing_info(None);
+
+                            if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
+                                if let Ok(mut status) = status.lock() {
+                                    status
+                                        .set_elapsed_milli_seconds(stream_time.as_millis() as u32);
+                                    status.set_elapsed_seconds(stream_time.as_secs() as u32);
+                                    status.set_output_buffer_size(audio_buf.capacity() as u32);
+                                    status.set_output_buffer_fullness(audio_buf.len() as u32);
+                                };
                             }
-                        }
-                        Err(DecoderError::Unhandled) => {
-                            warn!("Unhandled format");
-                            stream_in.send(PlayerMsg::NotSupported).ok();
-                            return;
-                        }
-                        Err(DecoderError::StreamError(e)) => {
-                            warn!("Error reading data stream: {}", e);
-                            stream_in_r.send(PlayerMsg::NotSupported).ok();
-                            return;
-                        }
-                    }
-
-                    if audio_buf.len() > 0 {
-                        let buf_len = if audio_buf.len() < len {
-                            audio_buf.len()
-                        } else {
-                            len
                         };
-
-                        let offset = match stream_params.skip.take() {
-                            dur if dur.is_zero() => 0i64,
-                            dur => {
-                                let samples =
-                                    dur.as_millis() as f64 * decoder.sample_rate() as f64 / 1000.0;
-                                samples.round() as i64 * decoder.channels() as i64 * 4
-                            }
-                        };
-
-                        if let Some(sm) = sm_ref.upgrade() {
-                            unsafe {
-                                (*sm.as_ptr())
-                                    .write_copy(
-                                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                                        offset,
-                                        SeekMode::Relative,
-                                    )
-                                    .ok();
-                                (*sm.as_ptr()).update_timing_info(None);
-
-                                if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
-                                    if let Ok(mut status) = status.lock() {
-                                        status.set_elapsed_milli_seconds(
-                                            stream_time.as_millis() as u32
-                                        );
-                                        status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                                        status.set_output_buffer_size(audio_buf.capacity() as u32);
-                                        status.set_output_buffer_fullness(audio_buf.len() as u32);
-                                    };
-                                }
-                            };
-                        }
                     }
+                }
 
-                    if draining && audio_buf.len() == 0 {
-                        stream_in_r.send(PlayerMsg::Drained).ok();
-                        drained = true;
-                    }
+                if draining && audio_buf.len() == 0 {
+                    stream_in_r.send(PlayerMsg::Drained).ok();
+                    drained = true;
                 }
             }));
         (*self.mainloop).borrow_mut().unlock();

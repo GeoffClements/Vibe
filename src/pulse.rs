@@ -74,6 +74,10 @@ impl Stream {
             .set_write_callback(Some(callback));
     }
 
+    fn set_underflow_callback(&mut self, callback: Option<Box<dyn FnMut() + 'static>>) {
+        (*self.inner).borrow_mut().set_underflow_callback(callback)
+    }
+
     fn write_copy(&mut self, data: &[u8], offset: i64, seek: SeekMode) -> Result<(), PAErr> {
         (*self.inner).borrow_mut().write_copy(data, offset, seek)
     }
@@ -248,7 +252,8 @@ impl AudioOutput {
         (*self.mainloop).borrow_mut().unlock();
 
         // Add callback to pa_stream to feed music
-        let stream_in_r = stream_in.clone();
+        let stream_in_r1 = stream_in.clone();
+        let stream_in_r2 = stream_in.clone();
         let mut draining = false;
         let mut drained = false;
         let sm_ref = Rc::downgrade(&stream);
@@ -259,12 +264,12 @@ impl AudioOutput {
                 if drained {
                     return;
                 }
-                
+
                 match decoder.fill_buf(&mut audio_buf, len as usize, stream_params.volume.clone()) {
                     Ok(()) => {}
                     Err(DecoderError::EndOfDecode) => {
                         if !draining {
-                            stream_in_r.send(PlayerMsg::EndOfDecode).ok();
+                            stream_in_r1.send(PlayerMsg::EndOfDecode).ok();
                             draining = true;
                         }
                     }
@@ -275,7 +280,7 @@ impl AudioOutput {
                     }
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
-                        stream_in_r.send(PlayerMsg::NotSupported).ok();
+                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
                         return;
                     }
                 }
@@ -321,10 +326,16 @@ impl AudioOutput {
                 }
 
                 if draining && audio_buf.len() == 0 {
-                    stream_in_r.send(PlayerMsg::Drained).ok();
                     drained = true;
                 }
             }));
+
+        // Add callback to detect end of track
+        (*stream)
+            .borrow_mut()
+            .set_underflow_callback(Some(Box::new(move || {
+                stream_in_r2.send(PlayerMsg::Drained).ok();
+            })));
         (*self.mainloop).borrow_mut().unlock();
 
         // Connect playback stream

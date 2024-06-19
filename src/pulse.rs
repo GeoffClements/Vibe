@@ -255,13 +255,14 @@ impl AudioOutput {
         let stream_in_r1 = stream_in.clone();
         let stream_in_r2 = stream_in.clone();
         let mut draining = false;
-        let mut drained = false;
+        let drained = Rc::new(RefCell::new(false));
+        let drained2 = drained.clone();
         let sm_ref = Rc::downgrade(&stream);
         (*self.mainloop).borrow_mut().lock();
         (*stream)
             .borrow_mut()
             .set_write_callback(Box::new(move |len| {
-                if drained {
+                if *drained.borrow() {
                     return;
                 }
 
@@ -326,7 +327,7 @@ impl AudioOutput {
                 }
 
                 if draining && audio_buf.len() == 0 {
-                    drained = true;
+                    *drained.borrow_mut() = true;
                 }
             }));
 
@@ -334,7 +335,9 @@ impl AudioOutput {
         (*stream)
             .borrow_mut()
             .set_underflow_callback(Some(Box::new(move || {
-                stream_in_r2.send(PlayerMsg::Drained).ok();
+                if *drained2.borrow() {
+                    stream_in_r2.send(PlayerMsg::Drained).ok();
+                }
             })));
         (*self.mainloop).borrow_mut().unlock();
 

@@ -188,9 +188,17 @@ impl Decoder {
     pub fn fill_buf(
         &mut self,
         buffer: &mut Vec<u8>,
-        limit: usize,
+        limit: Option<usize>,
         volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError> {
+        let limit = limit.unwrap_or_else(|| {
+            if buffer.capacity() > 0 {
+                buffer.capacity()
+            } else {
+                1024
+            }
+        });
+
         while buffer.len() < limit {
             let packet = match self.probed.format.next_packet() {
                 Ok(packet) => packet,

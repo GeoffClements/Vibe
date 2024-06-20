@@ -293,14 +293,7 @@ impl AudioOutput {
                         len
                     };
 
-                    let offset = match stream_params.skip.take() {
-                        dur if dur.is_zero() => 0i64,
-                        dur => {
-                            let samples =
-                                dur.as_millis() as f64 * decoder.sample_rate() as f64 / 1000.0;
-                            samples.round() as i64 * decoder.channels() as i64 * 4
-                        }
-                    };
+                    let offset = decoder.dur_to_samples(stream_params.skip.take()) as i64;
 
                     if let Some(sm) = sm_ref.upgrade() {
                         unsafe {
@@ -312,17 +305,16 @@ impl AudioOutput {
                                 )
                                 .ok();
                             (*sm.as_ptr()).update_timing_info(None);
+                        }
 
-                            if let Ok(Some(stream_time)) = (*sm.as_ptr()).get_time() {
-                                if let Ok(mut status) = status.lock() {
-                                    status
-                                        .set_elapsed_milli_seconds(stream_time.as_millis() as u32);
-                                    status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                                    status.set_output_buffer_size(audio_buf.capacity() as u32);
-                                    status.set_output_buffer_fullness(audio_buf.len() as u32);
-                                };
-                            }
-                        };
+                        if let Ok(Some(stream_time)) = unsafe { (*sm.as_ptr()).get_time() } {
+                            if let Ok(mut status) = status.lock() {
+                                status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
+                                status.set_elapsed_seconds(stream_time.as_secs() as u32);
+                                status.set_output_buffer_size(audio_buf.capacity() as u32);
+                                status.set_output_buffer_fullness(audio_buf.len() as u32);
+                            };
+                        }
                     }
                 }
 

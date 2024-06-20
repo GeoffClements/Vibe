@@ -1,5 +1,6 @@
 use std::{
     io::Write,
+    mem,
     net::{Ipv4Addr, TcpStream},
     sync::{Arc, Mutex},
     time::Duration,
@@ -55,8 +56,11 @@ pub enum AudioFormat {
 impl AudioFormat {
     pub fn size_of(&self) -> usize {
         match self {
-            Self::F32 | Self::I32 | Self::U32 => 4,
-            Self::I16 | Self::U16 => 2,
+            Self::F32 => mem::size_of::<f32>(),
+            Self::I32 => mem::size_of::<i32>(),
+            Self::U32 => mem::size_of::<u32>(),
+            Self::I16 => mem::size_of::<i16>(),
+            Self::U16 => mem::size_of::<u16>(),
         }
     }
 }
@@ -249,6 +253,24 @@ impl Decoder {
             }
         }
         Ok(())
+    }
+
+    pub fn samples_to_dur(&self, samples: u64) -> Duration {
+        Duration::from_micros(
+            samples
+                * self.spec.sample_rate as u64
+                * self.spec.channels as u64
+                * self.spec.format.size_of() as u64
+                * 1_000_000,
+        )
+    }
+
+    pub fn dur_to_samples(&self, dur: Duration) -> u64 {
+        self.spec.sample_rate as u64
+            * self.spec.channels as u64
+            * self.spec.format.size_of() as u64
+            * dur.as_micros() as u64
+            / 1_000_000
     }
 }
 

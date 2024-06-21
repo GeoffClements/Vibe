@@ -334,8 +334,8 @@ impl AudioOutput {
             return;
         }
 
-        self.enqueue(stream, stream_params.autostart, stream_in.clone());
         stream_in.send(PlayerMsg::StreamEstablished).ok();
+        self.enqueue(stream, stream_params.autostart, stream_in.clone());
     }
 
     fn connect_stream(

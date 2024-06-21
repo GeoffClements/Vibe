@@ -438,17 +438,12 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
-        PlayerMsg::Decoder((decoder, stream_params)) => {
-            if let Some((stream, autostart)) = output.make_stream(
-                decoder,
-                stream_in.clone(),
-                status.clone(),
-                stream_params,
-                device,
-            ) {
-                stream_in.send(PlayerMsg::StreamEstablished).ok();
-                output.enqueue(stream, autostart, stream_in.clone());
-            }
-        }
+        PlayerMsg::Decoder((decoder, stream_params)) => output.enqueue_new_stream(
+            decoder,
+            stream_in.clone(),
+            status.clone(),
+            stream_params,
+            device,
+        ),
     }
 }

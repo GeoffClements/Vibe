@@ -205,14 +205,14 @@ impl AudioOutput {
         })
     }
 
-    pub fn make_stream(
+    pub fn enqueue_new_stream(
         &mut self,
         mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
         status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
         device: &Option<String>,
-    ) -> Option<(Rc<RefCell<Stream>>, slimproto::proto::AutoStart)> {
+    ) {
         // Create an audio buffer to hold raw u8 samples
         let mut audio_buf =
             Vec::with_capacity(decoder.dur_to_samples(stream_params.output_threshold) as usize);
@@ -226,12 +226,12 @@ impl AudioOutput {
             Err(DecoderError::Unhandled) => {
                 warn!("Unhandled format");
                 stream_in.send(PlayerMsg::NotSupported).ok();
-                return None;
+                return;
             }
             Err(DecoderError::StreamError(e)) => {
                 warn!("Error reading data stream: {}", e);
                 stream_in.send(PlayerMsg::NotSupported).ok();
-                return None;
+                return;
             }
         }
 
@@ -241,7 +241,7 @@ impl AudioOutput {
                 Some(stream) => stream,
                 None => {
                     stream_in.send(PlayerMsg::NotSupported).ok();
-                    return None;
+                    return;
                 }
             },
         ));
@@ -272,7 +272,7 @@ impl AudioOutput {
                     }
                     Err(DecoderError::Unhandled) => {
                         warn!("Unhandled format");
-                        stream_in.send(PlayerMsg::NotSupported).ok();
+                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
                         return;
                     }
                     Err(DecoderError::StreamError(e)) => {
@@ -331,10 +331,11 @@ impl AudioOutput {
 
         // Connect playback stream
         if self.connect_stream(stream.clone(), device).is_err() {
-            return None;
+            return;
         }
 
-        Some((stream, stream_params.autostart))
+        self.enqueue(stream, stream_params.autostart, stream_in.clone());
+        stream_in.send(PlayerMsg::StreamEstablished).ok();
     }
 
     fn connect_stream(
@@ -404,7 +405,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn enqueue(
+    fn enqueue(
         &mut self,
         stream: Rc<RefCell<Stream>>,
         autostart: slimproto::proto::AutoStart,

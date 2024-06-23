@@ -16,6 +16,14 @@ demultiplexing and codec decoding is done natively thanks to
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
 amazing work!.
 
+Symphonia has optimisation features that are off by default, you can switch them on 
+with `--features symphonia/<optimisation>`. These features are:
+ - `opt-simd-sse`
+ - `opt-simd-avx`
+ - `opt-simd-neon`
+
+or you can switch them all on with `opt-simd`.
+
 ## What Vibe can do
 - Play Flac, AAC, Apple lossless, Ogg/Vorbis, MP3 and PCM streams
 - Gapless playback

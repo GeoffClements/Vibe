@@ -14,8 +14,9 @@ use slimproto::{
     status::StatusData,
 };
 use symphonia::core::{
-    audio::{AsAudioBufferRef, RawSampleBuffer, Signal},
+    audio::{AudioBufferRef, RawSample, RawSampleBuffer, Signal, SignalSpec},
     codecs::{Decoder as SymDecoder, DecoderOptions},
+    conv::FromSample,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
@@ -227,36 +228,33 @@ impl Decoder {
                 Err(_) => 1.0,
             };
 
-            let capacity = decoded.capacity();
-            let spec = *decoded.spec();
-
             match self.spec.format {
                 AudioFormat::F32 => {
-                    let mut samples = decoded.make_equivalent();
-                    decoded.convert::<f32>(&mut samples);
-                    samples.transform(|s| s * vol);
-
-                    let mut sample_buffer = RawSampleBuffer::<f32>::new(capacity as u64, spec);
-                    sample_buffer.copy_interleaved_ref(samples.as_audio_buffer_ref());
-                    buffer.extend_from_slice(sample_buffer.as_bytes());
+                    sample_to_buffer::<f32>(
+                        buffer,
+                        &decoded,
+                        vol,
+                        decoded.capacity(),
+                        *decoded.spec(),
+                    );
                 }
                 AudioFormat::I32 | AudioFormat::U32 => {
-                    let mut samples = decoded.make_equivalent();
-                    decoded.convert::<i32>(&mut samples);
-                    samples.transform(|s| (s as f32 * vol).round() as i32);
-
-                    let mut sample_buffer = RawSampleBuffer::<i32>::new(capacity as u64, spec);
-                    sample_buffer.copy_interleaved_ref(samples.as_audio_buffer_ref());
-                    buffer.extend_from_slice(sample_buffer.as_bytes());
+                    sample_to_buffer::<i32>(
+                        buffer,
+                        &decoded,
+                        vol,
+                        decoded.capacity(),
+                        *decoded.spec(),
+                    );
                 }
                 AudioFormat::I16 | AudioFormat::U16 => {
-                    let mut samples = decoded.make_equivalent();
-                    decoded.convert::<i16>(&mut samples);
-                    samples.transform(|s| (s as f32 * vol).round() as i16);
-
-                    let mut sample_buffer = RawSampleBuffer::<i16>::new(capacity as u64, spec);
-                    sample_buffer.copy_interleaved_ref(samples.as_audio_buffer_ref());
-                    buffer.extend_from_slice(sample_buffer.as_bytes());
+                    sample_to_buffer::<i16>(
+                        buffer,
+                        &decoded,
+                        vol,
+                        decoded.capacity(),
+                        *decoded.spec(),
+                    );
                 }
             }
         }
@@ -280,6 +278,24 @@ impl Decoder {
             * dur.as_micros() as u64
             / 1_000_000
     }
+}
+
+fn sample_to_buffer<T>(
+    buffer: &mut Vec<u8>,
+    decoded: &AudioBufferRef,
+    vol: f32,
+    capacity: usize,
+    spec: SignalSpec,
+) where
+    T: RawSample + FromSample<f32>,
+{
+    let mut samples = decoded.make_equivalent();
+    decoded.convert::<f32>(&mut samples);
+    samples.transform(|s| s * vol);
+
+    let mut sample_buffer = RawSampleBuffer::<T>::new(capacity as u64, spec);
+    sample_buffer.copy_interleaved_typed::<f32>(&samples);
+    buffer.extend_from_slice(sample_buffer.as_bytes());
 }
 
 pub fn make_decoder(

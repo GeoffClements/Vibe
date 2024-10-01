@@ -103,9 +103,9 @@ checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
 
 [[package]]
 name = "bytes"
-version = "1.6.0"
+version = "1.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
+checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
 
 [[package]]
 name = "cc"
@@ -468,9 +468,9 @@ dependencies = [
 
 [[package]]
 name = "slimproto"
-version = "0.1.17"
+version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da9a61a09e11914815c1bd51cd27859bc95b4bddc73eee99c5a6358f15a4677e"
+checksum = "87950de003a87a2661f15b52ab92a2e7ab489288f59f4dae11bef7549d84255f"
 dependencies = [
  "bitflags 2.5.0",
  "bytes",

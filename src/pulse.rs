@@ -252,12 +252,12 @@ impl AudioOutput {
                 Err(DecoderError::Unhandled) => {
                     warn!("Unhandled format");
                     stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                    return;
+                    draining = true;
                 }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                    return;
+                    draining = true;
                 }
             }
 

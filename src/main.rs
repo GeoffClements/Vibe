@@ -237,6 +237,8 @@ fn process_slim_msg(
             if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
+                status.set_output_buffer_size(0);
+                status.set_output_buffer_fullness(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();
@@ -248,6 +250,8 @@ fn process_slim_msg(
             if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
+                status.set_output_buffer_size(0);
+                status.set_output_buffer_fullness(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
                 slim_tx_in.send(msg).ok();

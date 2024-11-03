@@ -2,7 +2,8 @@
 
 ## About
 Vibe is a music player that uses the [SLIM TCP protocol][`slimtcp`] to 
-connect to a [Logitech Media Server][`lms`].
+connect to a [Lyrion Music Server][`lms`] formally known as a
+Logitech Media Server.
 
 If you're looking for a well-tested, proven player then this is *not* it, 
 instead you need [squeezelite][`squeezelite`] which has a robust, well-maintained
@@ -26,7 +27,7 @@ or you can switch them all on with `opt-simd`.
 
 ## What Vibe can do
 - Play Flac, AAC, Apple lossless, Ogg/Vorbis, MP3 and PCM streams
-- Gapless playback
+- Gapless playback when possible
 - Stop, play, pause and resume
 - Volume control
 - Select output device
@@ -49,7 +50,7 @@ using it, please let me know. Equally please file any bug reports and lodge
 any suggestions at [the home page](https://github.com/GeoffClements/Vibe).
 
 [`slimtcp`]: https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol
-[`lms`]: https://github.com/Logitech/slimserver
+[`lms`]: https://lyrion.org/
 [`squeezelite`]: https://github.com/ralph-irving/squeezelite
 [`symphonia`]: https://crates.io/crates/symphonia
 [`rust`]: https://www.rust-lang.org/

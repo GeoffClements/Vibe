@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{bail, Context};
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 use log::warn;
 use slimproto::{
@@ -96,7 +97,7 @@ impl Decoder {
         format: slimproto::proto::Format,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
         pcmchannels: slimproto::proto::PcmChannels,
-    ) -> Option<Self> {
+    ) -> anyhow::Result<Self> {
         // Create a hint to help the format registry guess what format reader is appropriate.
         let mut hint = Hint::new();
         hint.mime_type({
@@ -110,22 +111,19 @@ impl Decoder {
             }
         });
 
-        let probed = match symphonia::default::get_probe().format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        ) {
-            Ok(probed) => probed,
-            Err(_) => {
-                return None;
-            }
-        };
+        let probed = symphonia::default::get_probe()
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .context("Unrecognised container format")?;
 
         let track = match probed.format.default_track() {
             Some(track) => track,
             None => {
-                return None;
+                bail!("Unable to find default track");
             }
         };
 
@@ -154,16 +152,11 @@ impl Decoder {
         };
 
         // Create a decoder for the track.
-        let decoder = match symphonia::default::get_codecs()
+        let decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions::default())
-        {
-            Ok(decoder) => decoder,
-            Err(_) => {
-                return None;
-            }
-        };
+            .context("Unable to find suitable decoder")?;
 
-        Some(Decoder {
+        Ok(Decoder {
             probed,
             decoder,
             spec: AudioSpec {
@@ -313,7 +306,7 @@ pub fn make_decoder(
     volume: Arc<Mutex<Vec<f32>>>,
     skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
-) -> Option<(Decoder, StreamParams)> {
+) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
         default_ip
     } else {
@@ -322,9 +315,9 @@ pub fn make_decoder(
 
     let data_stream = match make_connection(ip, server_port, http_headers) {
         Ok(data_s) => data_s,
-        Err(_) => {
+        Err(e) => {
             warn!("Unable to connect to data stream at {}", ip);
-            return None;
+            return Err(e);
         }
     };
 
@@ -342,18 +335,15 @@ pub fn make_decoder(
     );
     stream_in.send(PlayerMsg::BufferThreshold).ok();
 
-    match Decoder::try_new(mss, format, pcmsamplerate, pcmchannels) {
-        Some(decoder) => Some((
-            decoder,
-            StreamParams {
-                autostart,
-                volume,
-                skip,
-                output_threshold,
-            },
-        )),
-        None => None,
-    }
+    Ok((
+        Decoder::try_new(mss, format, pcmsamplerate, pcmchannels)?,
+        StreamParams {
+            autostart,
+            volume,
+            skip,
+            output_threshold,
+        },
+    ))
 }
 
 fn make_connection(ip: Ipv4Addr, port: u16, http_headers: String) -> anyhow::Result<TcpStream> {

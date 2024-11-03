@@ -1,8 +1,8 @@
 [package]
 name = "Vibe_Player"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
-description = "A music player for the Logitech Media Server"
+description = "A music player for the Lyrion Music Server"
 license = "MIT"
 repository = "https://github.com/GeoffClements/Vibe"
 homepage = "https://github.com/GeoffClements/Vibe"
@@ -12,7 +12,7 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.92"
 clap = { version = "4.5.18", features = ["derive"] }
 crossbeam = "0.8.4"
 libpulse-binding = { version = "2.28.1", optional = true }

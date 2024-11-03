@@ -347,12 +347,11 @@ fn process_slim_msg(
                             skip.clone(),
                             output_threshold,
                         ) {
-                            Some((decoder, stream_params)) => {
-                                stream_in_r
-                                    .send(PlayerMsg::Decoder((decoder, stream_params)))
-                                    .ok();
+                            Ok(decoder_params) => {
+                                stream_in_r.send(PlayerMsg::Decoder(decoder_params)).ok();
                             }
-                            None => {
+                            Err(e) => {
+                                warn!("{}", e);
                                 stream_in_r.send(PlayerMsg::NotSupported).ok();
                             }
                         }

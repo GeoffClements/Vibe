@@ -103,9 +103,9 @@ checksum = "8334215b81e418a0a7bdb8ef0849474f40bb10c8b71f1c4ed315cff49f32494d"
 
 [[package]]
 name = "bytes"
-version = "1.7.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
+checksum = "9ac0150caa2ae65ca5bd83f25c7de183dea78d4d366469f148435e2acfbad0da"
 
 [[package]]
 name = "cfg-if"
@@ -248,9 +248,9 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "framous"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e9d19e42c4976a7cb2e87a7108035935684ba18f2aa7c333ce8c7f183edb45"
+checksum = "588a443e5603171024e0f82212cd5fb0e0608ad0d6e16f1eeea77c847a0c90b6"
 dependencies = [
  "bytes",
 ]
@@ -401,9 +401,9 @@ dependencies = [
 
 [[package]]
 name = "slimproto"
-version = "0.1.18"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87950de003a87a2661f15b52ab92a2e7ab489288f59f4dae11bef7549d84255f"
+checksum = "741ae746e694a3d2b259c72ff8a70a363cb5cad4584a9c81f7568cf263e84763"
 dependencies = [
  "bitflags 2.6.0",
  "bytes",

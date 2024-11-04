@@ -1,5 +1,5 @@
 {
-    "rust-analyzer.debug.sourceFileMap": {
-        "/mnt/auto/henry": "/home/geoff"
-    },
+    "rust-analyzer.cargo.features": [
+        "symphonia/opt-simd"
+    ],
 }

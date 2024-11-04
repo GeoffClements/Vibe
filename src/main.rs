@@ -16,8 +16,12 @@ use crossbeam::{
 
 #[cfg(feature = "dummy")]
 use dummy as output;
+
 #[cfg(feature = "pulse")]
 use pulse as output;
+
+#[cfg(feature = "cpal")]
+use cpal as output;
 
 use log::{info, warn};
 use output::AudioOutput;
@@ -29,8 +33,12 @@ use slimproto::{
 
 #[cfg(feature = "dummy")]
 mod dummy;
+
 #[cfg(feature = "pulse")]
 mod pulse;
+
+#[cfg(feature = "cpal")]
+mod cpal;
 
 mod decode;
 mod proto;

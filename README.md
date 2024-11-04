@@ -15,7 +15,7 @@ considered as beta code and any real-world testing is welcome.
 Other than pulseaudio Vibe has zero run-time dependencies, all the stream
 demultiplexing and codec decoding is done natively thanks to 
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
-amazing work!.
+amazing work!
 
 Symphonia has optimisation features that are off by default, you can switch them on 
 with `--features symphonia/<optimisation>`. These features are:

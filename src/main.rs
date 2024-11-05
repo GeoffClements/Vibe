@@ -14,39 +14,27 @@ use crossbeam::{
     channel::{bounded, Select, Sender},
 };
 
-#[cfg(feature = "dummy")]
-use dummy as output;
-
-#[cfg(feature = "pulse")]
-use pulse as output;
-
-#[cfg(feature = "cpal")]
-use cpal as output;
-
 use log::{info, warn};
-use output::AudioOutput;
+use pulse::AudioOutput;
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, ServerMessage, SLIM_PORT},
     status::{StatusCode, StatusData},
 };
 
-#[cfg(feature = "dummy")]
-mod dummy;
 
-#[cfg(feature = "pulse")]
 mod pulse;
-
-#[cfg(feature = "cpal")]
-mod cpal;
-
 mod decode;
 mod proto;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
 struct Cli {
-    #[arg(short, name = "SERVER[:PORT]", value_parser = cli_server_parser, help = "Connect to the specified server, otherwise use autodiscovery")]
+    #[arg(
+        short,
+        name = "SERVER[:PORT]",
+        value_parser = cli_server_parser,
+        help = "Connect to the specified server, otherwise use autodiscovery")]
     server: Option<SocketAddrV4>,
 
     #[arg(
@@ -107,14 +95,10 @@ fn main() -> anyhow::Result<()> {
         .with_level(cli.loglevel)
         .init()?;
 
-    // Create a pulse audio threaded main loop and context
-    // let (ml, cx) = pulse::setup()?;
-    let mut output = AudioOutput::try_new()?;
-
     // List the output devices and terminate
     if cli.list {
         println!("Output devices:");
-        let names = output::get_output_device_names()?;
+        let names = pulse::get_output_device_names()?;
         names
             .iter()
             .enumerate()
@@ -126,6 +110,8 @@ fn main() -> anyhow::Result<()> {
         println!();
         return Ok(());
     }
+
+    let mut output = AudioOutput::try_new()?;
 
     loop {
         // Start the slim protocol threads

@@ -1,8 +1,5 @@
 {
     "rust-analyzer.cargo.features": [
         "symphonia/opt-simd",
-        "cpal"
     ],
-    // "rust-analyzer.cargo.noDefaultFeatures": true,
-    // "rust-analyzer.check.noDefaultFeatures": true,
 }

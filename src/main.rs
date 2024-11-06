@@ -15,7 +15,7 @@ use crossbeam::{
 };
 
 use log::{info, warn};
-use pulse::AudioOutput;
+use rodio_out::AudioOutput;
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, ServerMessage, SLIM_PORT},
@@ -23,7 +23,7 @@ use slimproto::{
 };
 
 
-mod pulse;
+mod rodio_out;
 mod decode;
 mod proto;
 
@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
     // List the output devices and terminate
     if cli.list {
         println!("Output devices:");
-        let names = pulse::get_output_device_names()?;
+        let names = rodio_out::get_output_device_names()?;
         names
             .iter()
             .enumerate()

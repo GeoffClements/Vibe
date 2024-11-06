@@ -15,14 +15,14 @@ use slimproto::{
     status::StatusData,
 };
 use symphonia::core::{
-    audio::{AudioBufferRef, RawSample, RawSampleBuffer, Signal, SignalSpec},
+    audio::{AudioBuffer, RawSample, RawSampleBuffer, SampleBuffer, Signal},
     codecs::{Decoder as SymDecoder, DecoderOptions},
     conv::FromSample,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
     probe::{Hint, ProbeResult},
-    sample::SampleFormat,
+    sample::{Sample, SampleFormat},
 };
 
 use crate::{PlayerMsg, StreamParams};
@@ -31,6 +31,7 @@ use crate::{PlayerMsg, StreamParams};
 pub enum DecoderError {
     EndOfDecode,
     Unhandled,
+    Retry,
     StreamError(symphonia::core::errors::Error),
 }
 
@@ -39,6 +40,7 @@ impl std::fmt::Display for DecoderError {
         match self {
             DecoderError::EndOfDecode => write!(f, "End of decode stream"),
             DecoderError::Unhandled => write!(f, "Unhandled format"),
+            DecoderError::Retry => write!(f, "Decoder reset required"),
             DecoderError::StreamError(e) => write!(f, "{}", e),
         }
     }
@@ -179,7 +181,66 @@ impl Decoder {
         self.spec.format
     }
 
-    pub fn fill_buf(
+    fn get_audio_buffer(
+        &mut self,
+        volume: Arc<Mutex<Vec<f32>>>,
+    ) -> Result<AudioBuffer<f32>, DecoderError> {
+        let packet = self.probed.format.next_packet().map_err(|err| match err {
+            symphonia::core::errors::Error::IoError(err)
+                if err.kind() == std::io::ErrorKind::UnexpectedEof
+                    && err.to_string() == "end of stream" =>
+            {
+                DecoderError::EndOfDecode
+            }
+            symphonia::core::errors::Error::ResetRequired => {
+                self.decoder.reset();
+                DecoderError::Retry
+            }
+            error => DecoderError::StreamError(error),
+        })?;
+
+        let decoded = self
+            .decoder
+            .decode(&packet)
+            .map_err(|e| DecoderError::StreamError(e))?;
+
+        let vol = volume.lock().map(|v| v[0]).unwrap_or(1.0);
+
+        let mut audio_buffer = decoded.make_equivalent();
+        decoded.convert::<f32>(&mut audio_buffer);
+        audio_buffer.transform(|s| s * vol);
+        Ok(audio_buffer)
+    }
+
+    pub fn fill_sample_buffer<T>(
+        &mut self,
+        buffer: &mut Vec<T>,
+        limit: Option<usize>,
+        volume: Arc<Mutex<Vec<f32>>>,
+    ) -> anyhow::Result<()>
+    where
+        T: Sample + FromSample<f32>,
+    {
+        let limit = limit.unwrap_or_else(|| {
+            if buffer.capacity() > 0 {
+                buffer.capacity()
+            } else {
+                1024
+            }
+        });
+
+        while buffer.len() < limit {
+            let audio_buffer = self.get_audio_buffer(volume.clone())?;
+            let mut sample_buffer =
+                SampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
+            sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
+            buffer.extend_from_slice(sample_buffer.samples());
+        }
+
+        Ok(())
+    }
+
+    pub fn fill_raw_buffer(
         &mut self,
         buffer: &mut Vec<u8>,
         limit: Option<usize>,
@@ -194,64 +255,33 @@ impl Decoder {
         });
 
         while buffer.len() < limit {
-            let packet = match self.probed.format.next_packet() {
-                Ok(packet) => packet,
-                Err(symphonia::core::errors::Error::IoError(err))
-                    if err.kind() == std::io::ErrorKind::UnexpectedEof
-                        && err.to_string() == "end of stream" =>
-                {
-                    return Err(DecoderError::EndOfDecode);
-                }
-                Err(e) => {
-                    return Err(DecoderError::StreamError(e));
-                }
-            };
-
-            let decoded = match self.decoder.decode(&packet) {
-                Ok(decoded) => decoded,
-                Err(_) => continue,
-            };
-
-            if decoded.frames() == 0 {
-                continue;
-            }
-
-            let vol = match volume.lock() {
-                Ok(volume) => volume[0],
-                Err(_) => 1.0,
-            };
+            let audio_buffer = self.get_audio_buffer(volume.clone())?;
 
             match self.spec.format {
                 AudioFormat::F32 => {
-                    sample_to_buffer::<f32>(
-                        buffer,
-                        &decoded,
-                        vol,
-                        decoded.capacity(),
-                        *decoded.spec(),
-                    );
+                    self.audio_to_raw::<f32>(audio_buffer, buffer);
                 }
+
                 AudioFormat::I32 | AudioFormat::U32 => {
-                    sample_to_buffer::<i32>(
-                        buffer,
-                        &decoded,
-                        vol,
-                        decoded.capacity(),
-                        *decoded.spec(),
-                    );
+                    self.audio_to_raw::<i32>(audio_buffer, buffer)
                 }
+
                 AudioFormat::I16 | AudioFormat::U16 => {
-                    sample_to_buffer::<i16>(
-                        buffer,
-                        &decoded,
-                        vol,
-                        decoded.capacity(),
-                        *decoded.spec(),
-                    );
+                    self.audio_to_raw::<i16>(audio_buffer, buffer);
                 }
-            }
+            };
         }
         Ok(())
+    }
+
+    fn audio_to_raw<T>(&self, audio_buffer: AudioBuffer<f32>, buffer: &mut Vec<u8>)
+    where
+        T: RawSample + FromSample<f32>,
+    {
+        let mut raw_sample_buffer =
+            RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
+        raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
+        buffer.extend_from_slice(raw_sample_buffer.as_bytes());
     }
 
     pub fn samples_to_dur(&self, samples: u64) -> Duration {
@@ -271,24 +301,6 @@ impl Decoder {
             * dur.as_micros() as u64
             / 1_000_000
     }
-}
-
-fn sample_to_buffer<T>(
-    buffer: &mut Vec<u8>,
-    decoded: &AudioBufferRef,
-    vol: f32,
-    capacity: usize,
-    spec: SignalSpec,
-) where
-    T: RawSample + FromSample<f32>,
-{
-    let mut samples = decoded.make_equivalent();
-    decoded.convert::<f32>(&mut samples);
-    samples.transform(|s| s * vol);
-
-    let mut sample_buffer = RawSampleBuffer::<T>::new(capacity as u64, spec);
-    sample_buffer.copy_interleaved_typed::<f32>(&samples);
-    buffer.extend_from_slice(sample_buffer.as_bytes());
 }
 
 pub fn make_decoder(

@@ -201,8 +201,7 @@ impl AudioOutput {
             Vec::with_capacity(decoder.dur_to_samples(stream_params.output_threshold) as usize);
 
         // Prefill audio buffer to threshold
-        match decoder.fill_buf(&mut audio_buf, None, stream_params.volume.clone()) {
-            Ok(()) => {}
+        match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
             Err(DecoderError::EndOfDecode) => {
                 stream_in.send(PlayerMsg::EndOfDecode).ok();
             }
@@ -216,6 +215,10 @@ impl AudioOutput {
                 stream_in.send(PlayerMsg::NotSupported).ok();
                 return;
             }
+            Err(_) => {
+                return;
+            }
+            _ => {}
         }
 
         (*self.mainloop).borrow_mut().lock();
@@ -241,7 +244,7 @@ impl AudioOutput {
                 return;
             }
 
-            match decoder.fill_buf(&mut audio_buf, Some(len), stream_params.volume.clone()) {
+            match decoder.fill_raw_buffer(&mut audio_buf, Some(len), stream_params.volume.clone()) {
                 Ok(()) => {}
                 Err(DecoderError::EndOfDecode) => {
                     if !draining {
@@ -259,6 +262,7 @@ impl AudioOutput {
                     stream_in_r1.send(PlayerMsg::NotSupported).ok();
                     draining = true;
                 }
+                Err(_) => {}
             }
 
             if audio_buf.len() > 0 {

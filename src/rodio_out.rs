@@ -74,17 +74,21 @@ impl Iterator for DecoderSource {
                     self.volume.clone(),
                 ) {
                     Ok(()) => {}
+
                     Err(DecoderError::EndOfDecode) => {
                         self.stream_in.send(PlayerMsg::EndOfDecode).ok();
                     }
+
                     Err(DecoderError::Unhandled) => {
                         warn!("Unhandled format");
                         self.stream_in.send(PlayerMsg::NotSupported).ok();
                     }
+
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         self.stream_in.send(PlayerMsg::NotSupported).ok();
                     }
+
                     Err(DecoderError::Retry) => {
                         continue;
                     }
@@ -101,10 +105,26 @@ impl Iterator for DecoderSource {
     }
 }
 
+struct Stream {
+    output: OutputStream,
+    handle: OutputStreamHandle,
+}
+
+impl Stream {
+    fn try_from_device(device: &Device) -> anyhow::Result<Self> {
+        let (output, handle) = OutputStream::try_from_device(device)?;
+        Ok(Self { output, handle })
+    }
+
+    fn play(&self, source: DecoderSource) {
+        self.handle.play_raw(source);
+    }
+}
+
 pub struct AudioOutput {
     host: rodio::cpal::Host,
     device: rodio::cpal::Device,
-    playing: Option<DecoderSource>,
+    playing: Option<Stream>,
     next_up: Option<DecoderSource>,
 }
 
@@ -144,11 +164,9 @@ impl AudioOutput {
         if self.playing.is_some() {
             self.next_up = Some(decoder_source)
         } else {
-            self.playing = Some(decoder_source);
-            if let Ok((output_stream, output_stream_h)) =
-                OutputStream::try_from_device(&self.device)
-            {
-                output_stream_h.play_once(decoder_source);
+            if let Ok(stream) = Stream::try_from_device(&self.device) {
+                stream.play(decoder_source);
+                self.playing = Some(stream);
             }
         }
     }

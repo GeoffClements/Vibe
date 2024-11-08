@@ -201,24 +201,31 @@ impl AudioOutput {
             Vec::with_capacity(decoder.dur_to_samples(stream_params.output_threshold) as usize);
 
         // Prefill audio buffer to threshold
-        match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
-            Err(DecoderError::EndOfDecode) => {
-                stream_in.send(PlayerMsg::EndOfDecode).ok();
+        loop {
+            match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
+                Ok(()) => {}
+
+                Err(DecoderError::EndOfDecode) => {
+                    stream_in.send(PlayerMsg::EndOfDecode).ok();
+                }
+
+                Err(DecoderError::Unhandled) => {
+                    warn!("Unhandled format");
+                    stream_in.send(PlayerMsg::NotSupported).ok();
+                    return;
+                }
+
+                Err(DecoderError::StreamError(e)) => {
+                    warn!("Error reading data stream: {}", e);
+                    stream_in.send(PlayerMsg::NotSupported).ok();
+                    return;
+                }
+
+                Err(DecoderError::Retry) => {
+                    continue;
+                }
             }
-            Err(DecoderError::Unhandled) => {
-                warn!("Unhandled format");
-                stream_in.send(PlayerMsg::NotSupported).ok();
-                return;
-            }
-            Err(DecoderError::StreamError(e)) => {
-                warn!("Error reading data stream: {}", e);
-                stream_in.send(PlayerMsg::NotSupported).ok();
-                return;
-            }
-            Err(_) => {
-                return;
-            }
-            _ => {}
+            break;
         }
 
         (*self.mainloop).borrow_mut().lock();
@@ -244,25 +251,38 @@ impl AudioOutput {
                 return;
             }
 
-            match decoder.fill_raw_buffer(&mut audio_buf, Some(len), stream_params.volume.clone()) {
-                Ok(()) => {}
-                Err(DecoderError::EndOfDecode) => {
-                    if !draining {
-                        stream_in_r1.send(PlayerMsg::EndOfDecode).ok();
+            loop {
+                match decoder.fill_raw_buffer(
+                    &mut audio_buf,
+                    Some(len),
+                    stream_params.volume.clone(),
+                ) {
+                    Ok(()) => {}
+
+                    Err(DecoderError::EndOfDecode) => {
+                        if !draining {
+                            stream_in_r1.send(PlayerMsg::EndOfDecode).ok();
+                            draining = true;
+                        }
+                    }
+
+                    Err(DecoderError::Unhandled) => {
+                        warn!("Unhandled format");
+                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
                         draining = true;
                     }
+
+                    Err(DecoderError::StreamError(e)) => {
+                        warn!("Error reading data stream: {}", e);
+                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
+                        draining = true;
+                    }
+
+                    Err(DecoderError::Retry) => {
+                        continue;
+                    }
                 }
-                Err(DecoderError::Unhandled) => {
-                    warn!("Unhandled format");
-                    stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                    draining = true;
-                }
-                Err(DecoderError::StreamError(e)) => {
-                    warn!("Error reading data stream: {}", e);
-                    stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                    draining = true;
-                }
-                Err(_) => {}
+                break;
             }
 
             if audio_buf.len() > 0 {

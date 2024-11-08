@@ -7,8 +7,7 @@ use anyhow::{self, bail, Context};
 use crossbeam::channel::Sender;
 use log::warn;
 use rodio::{
-    cpal::traits::HostTrait, queue::SourcesQueueInput, Device, DeviceTrait, OutputStream,
-    OutputStreamHandle, Sink, Source,
+    cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamHandle, Sink, Source,
 };
 use slimproto::status::StatusData;
 
@@ -22,6 +21,7 @@ pub struct DecoderSource {
     frame: VecDeque<f32>,
     volume: Arc<Mutex<Vec<f32>>>,
     stream_in: Sender<PlayerMsg>,
+    started_flag: bool,
     eod_flag: bool,
 }
 
@@ -37,6 +37,7 @@ impl DecoderSource {
             frame: VecDeque::with_capacity(capacity),
             volume,
             stream_in,
+            started_flag: false,
             eod_flag: false,
         }
     }
@@ -67,7 +68,12 @@ impl Iterator for DecoderSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.frame.len() == 0 {
+        if !self.started_flag {
+            self.stream_in.send(PlayerMsg::TrackStarted).ok();
+            self.started_flag = true;
+        }
+
+        if self.frame.len() < 4 * 1024 && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
             loop {
                 match self.decoder.fill_sample_buffer::<f32>(
@@ -98,7 +104,10 @@ impl Iterator for DecoderSource {
                         continue;
                     }
                 }
-                self.frame = audio_buf.into();
+
+                if audio_buf.len() > 0 {
+                    self.frame.extend(audio_buf);
+                }
                 break;
             }
         }
@@ -112,7 +121,7 @@ impl Iterator for DecoderSource {
 
 struct Stream {
     _output: OutputStream,
-    handle: OutputStreamHandle,
+    _handle: OutputStreamHandle,
     sink: Sink,
 }
 
@@ -122,7 +131,7 @@ impl Stream {
         let sink = Sink::try_new(&handle)?;
         Ok(Self {
             _output: output,
-            handle,
+            _handle: handle,
             sink,
         })
     }
@@ -145,10 +154,9 @@ impl Stream {
 }
 
 pub struct AudioOutput {
-    host: rodio::cpal::Host,
+    _host: rodio::cpal::Host,
     device: rodio::cpal::Device,
     playing: Option<Stream>,
-    next_up: Option<DecoderSource>,
 }
 
 impl AudioOutput {
@@ -166,10 +174,9 @@ impl AudioOutput {
         };
 
         Ok(Self {
-            host,
+            _host: host,
             device,
             playing: None,
-            next_up: None,
         })
     }
 
@@ -187,14 +194,12 @@ impl AudioOutput {
 
         stream_in.send(PlayerMsg::StreamEstablished).ok();
 
-        if self.playing.is_some() {
-            self.next_up = Some(decoder_source)
+        if let Some(ref mut playing_stream) = self.playing {
+            playing_stream.play(decoder_source);
         } else {
             if let Ok(mut stream) = Stream::try_from_device(&self.device) {
                 stream.play(decoder_source);
-                if stream_params.autostart == slimproto::proto::AutoStart::Auto {
-                    stream_in.send(PlayerMsg::TrackStarted).ok();
-                } else {
+                if stream_params.autostart != slimproto::proto::AutoStart::Auto {
                     stream.pause();
                 }
                 self.playing = Some(stream);
@@ -218,29 +223,19 @@ impl AudioOutput {
         false
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         if let Some(ref stream) = self.playing {
             (*stream).stop();
         }
+        self.flush();
     }
 
     pub fn flush(&mut self) {
-        self.stop();
         self.playing = None;
-        self.next_up = None;
     }
 
     pub fn shift(&mut self) {
-        if let Some(decoder_source) = self.next_up.take() {
-            warn!("Shifting ...");
-            if let Ok(mut stream) = Stream::try_from_device(&self.device) {
-                stream.play(decoder_source);
-                self.playing = Some(stream);
-            }
-        } else {
-            warn!("NO SHIFT");
-            self.playing = None;
-        }
+        // Noop - uses rodio's stream append
     }
 }
 

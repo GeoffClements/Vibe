@@ -8,7 +8,7 @@ use crossbeam::channel::Sender;
 use log::warn;
 use rodio::{
     cpal::traits::HostTrait, queue::SourcesQueueInput, Device, DeviceTrait, OutputStream,
-    OutputStreamHandle, Source,
+    OutputStreamHandle, Sink, Source,
 };
 use slimproto::status::StatusData;
 
@@ -22,6 +22,7 @@ pub struct DecoderSource {
     frame: VecDeque<f32>,
     volume: Arc<Mutex<Vec<f32>>>,
     stream_in: Sender<PlayerMsg>,
+    eod_flag: bool,
 }
 
 impl DecoderSource {
@@ -36,6 +37,7 @@ impl DecoderSource {
             frame: VecDeque::with_capacity(capacity),
             volume,
             stream_in,
+            eod_flag: false,
         }
     }
 }
@@ -70,13 +72,16 @@ impl Iterator for DecoderSource {
             loop {
                 match self.decoder.fill_sample_buffer::<f32>(
                     &mut audio_buf,
-                    None,
+                    Some(8 * 2024),
                     self.volume.clone(),
                 ) {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {
-                        self.stream_in.send(PlayerMsg::EndOfDecode).ok();
+                        if !self.eod_flag {
+                            self.stream_in.send(PlayerMsg::EndOfDecode).ok();
+                            self.eod_flag = true;
+                        }
                     }
 
                     Err(DecoderError::Unhandled) => {
@@ -106,18 +111,36 @@ impl Iterator for DecoderSource {
 }
 
 struct Stream {
-    output: OutputStream,
+    _output: OutputStream,
     handle: OutputStreamHandle,
+    sink: Sink,
 }
 
 impl Stream {
     fn try_from_device(device: &Device) -> anyhow::Result<Self> {
         let (output, handle) = OutputStream::try_from_device(device)?;
-        Ok(Self { output, handle })
+        let sink = Sink::try_new(&handle)?;
+        Ok(Self {
+            _output: output,
+            handle,
+            sink,
+        })
     }
 
-    fn play(&self, source: DecoderSource) {
-        self.handle.play_raw(source);
+    fn play(&mut self, source: DecoderSource) {
+        self.sink.append(source);
+    }
+
+    fn unpause(&self) {
+        self.sink.play();
+    }
+
+    fn pause(&self) {
+        self.sink.pause();
+    }
+
+    fn stop(&self) {
+        self.sink.stop();
     }
 }
 
@@ -156,34 +179,69 @@ impl AudioOutput {
         stream_in: Sender<PlayerMsg>,
         status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
-        device: &Option<String>,
+        _device: &Option<String>,
     ) {
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
-        let decoder_source = DecoderSource::new(decoder, stream_params.volume, capacity, stream_in);
+        let decoder_source =
+            DecoderSource::new(decoder, stream_params.volume, capacity, stream_in.clone());
+
+        stream_in.send(PlayerMsg::StreamEstablished).ok();
 
         if self.playing.is_some() {
             self.next_up = Some(decoder_source)
         } else {
-            if let Ok(stream) = Stream::try_from_device(&self.device) {
+            if let Ok(mut stream) = Stream::try_from_device(&self.device) {
                 stream.play(decoder_source);
+                if stream_params.autostart == slimproto::proto::AutoStart::Auto {
+                    stream_in.send(PlayerMsg::TrackStarted).ok();
+                } else {
+                    stream.pause();
+                }
                 self.playing = Some(stream);
             }
         }
     }
 
-    pub fn unpause(&mut self) -> bool {
-        true
+    pub fn unpause(&self) -> bool {
+        if let Some(ref stream) = self.playing {
+            (*stream).unpause();
+            return true;
+        }
+        false
     }
 
-    pub fn pause(&mut self) -> bool {
-        true
+    pub fn pause(&self) -> bool {
+        if let Some(ref stream) = self.playing {
+            (*stream).pause();
+            return true;
+        }
+        false
     }
 
-    pub fn stop(&mut self) {}
+    pub fn stop(&self) {
+        if let Some(ref stream) = self.playing {
+            (*stream).stop();
+        }
+    }
 
-    pub fn flush(&mut self) {}
+    pub fn flush(&mut self) {
+        self.stop();
+        self.playing = None;
+        self.next_up = None;
+    }
 
-    pub fn shift(&mut self) {}
+    pub fn shift(&mut self) {
+        if let Some(decoder_source) = self.next_up.take() {
+            warn!("Shifting ...");
+            if let Ok(mut stream) = Stream::try_from_device(&self.device) {
+                stream.play(decoder_source);
+                self.playing = Some(stream);
+            }
+        } else {
+            warn!("NO SHIFT");
+            self.playing = None;
+        }
+    }
 }
 
 fn find_device(host: &rodio::cpal::Host, name: &String) -> Option<Device> {

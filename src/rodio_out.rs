@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, time::Duration,
 };
 
 use anyhow::{self, bail, Context};
@@ -16,12 +16,14 @@ use crate::{
     PlayerMsg, StreamParams,
 };
 
+const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
+
 pub struct DecoderSource {
     decoder: Decoder,
     frame: VecDeque<f32>,
     volume: Arc<Mutex<Vec<f32>>>,
     stream_in: Sender<PlayerMsg>,
-    started_flag: bool,
+    start_flag: bool,
     eod_flag: bool,
 }
 
@@ -37,7 +39,7 @@ impl DecoderSource {
             frame: VecDeque::with_capacity(capacity),
             volume,
             stream_in,
-            started_flag: false,
+            start_flag: true,
             eod_flag: false,
         }
     }
@@ -68,17 +70,17 @@ impl Iterator for DecoderSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.started_flag {
+        if self.start_flag {
             self.stream_in.send(PlayerMsg::TrackStarted).ok();
-            self.started_flag = true;
+            self.start_flag = false;
         }
 
-        if self.frame.len() < 4 * 1024 && !self.eod_flag {
+        if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
             loop {
                 match self.decoder.fill_sample_buffer::<f32>(
                     &mut audio_buf,
-                    Some(8 * 2024),
+                    Some(2 * MIN_AUDIO_BUFFER_SIZE),
                     self.volume.clone(),
                 ) {
                     Ok(()) => {}
@@ -184,7 +186,7 @@ impl AudioOutput {
         &mut self,
         decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
-        status: Arc<Mutex<StatusData>>,
+        _status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
         _device: &Option<String>,
     ) {
@@ -236,6 +238,13 @@ impl AudioOutput {
 
     pub fn shift(&mut self) {
         // Noop - uses rodio's stream append
+    }
+
+    pub fn get_dur(&self) -> Duration {
+        match self.playing {
+            Some(ref stream) => stream.sink.get_pos(),
+            None => Duration::ZERO
+        }
     }
 }
 

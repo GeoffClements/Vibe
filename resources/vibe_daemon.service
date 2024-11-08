@@ -1,5 +1,6 @@
 [Unit]
-Description=A music player for the Logitech Media Server
+Description=A music player for the Lyrion Music Server
+After=network-online.target sound.target
 
 [Service]
 Type=simple

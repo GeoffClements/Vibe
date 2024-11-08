@@ -111,7 +111,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut output = AudioOutput::try_new()?;
+    let mut output = AudioOutput::try_new(&cli.device)?;
 
     loop {
         // Start the slim protocol threads

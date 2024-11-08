@@ -1,26 +1,41 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
-use anyhow;
+use anyhow::{self, bail, Context};
 use crossbeam::channel::Sender;
-use rodio::{cpal::traits::HostTrait, DeviceTrait, Source};
+use log::warn;
+use rodio::{
+    cpal::traits::HostTrait, queue::SourcesQueueInput, Device, DeviceTrait, OutputStream,
+    OutputStreamHandle, Source,
+};
 use slimproto::status::StatusData;
 
-use crate::{decode::Decoder, PlayerMsg, StreamParams};
+use crate::{
+    decode::{Decoder, DecoderError},
+    PlayerMsg, StreamParams,
+};
 
 pub struct DecoderSource {
     decoder: Decoder,
-    frame: Vec<f32>,
-    idx: usize,
+    frame: VecDeque<f32>,
     volume: Arc<Mutex<Vec<f32>>>,
+    stream_in: Sender<PlayerMsg>,
 }
 
 impl DecoderSource {
-    fn new(decoder: Decoder, volume: Arc<Mutex<Vec<f32>>>) -> Self {
+    fn new(
+        decoder: Decoder,
+        volume: Arc<Mutex<Vec<f32>>>,
+        capacity: usize,
+        stream_in: Sender<PlayerMsg>,
+    ) -> Self {
         DecoderSource {
             decoder,
-            frame: Vec::with_capacity(8 * 1024),
-            idx: 0,
-            volume: volume.clone(),
+            frame: VecDeque::with_capacity(capacity),
+            volume,
+            stream_in,
         }
     }
 }
@@ -51,36 +66,91 @@ impl Iterator for DecoderSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.frame.len() == 0 {
-            self.decoder
-                .fill_sample_buffer::<f32>(&mut self.frame, None, self.volume.clone())
-                .ok()?;
-            self.idx = 0;
+            let mut audio_buf = Vec::with_capacity(self.frame.capacity());
+            loop {
+                match self.decoder.fill_sample_buffer::<f32>(
+                    &mut audio_buf,
+                    None,
+                    self.volume.clone(),
+                ) {
+                    Ok(()) => {}
+                    Err(DecoderError::EndOfDecode) => {
+                        self.stream_in.send(PlayerMsg::EndOfDecode).ok();
+                    }
+                    Err(DecoderError::Unhandled) => {
+                        warn!("Unhandled format");
+                        self.stream_in.send(PlayerMsg::NotSupported).ok();
+                    }
+                    Err(DecoderError::StreamError(e)) => {
+                        warn!("Error reading data stream: {}", e);
+                        self.stream_in.send(PlayerMsg::NotSupported).ok();
+                    }
+                    Err(DecoderError::Retry) => {
+                        continue;
+                    }
+                }
+                self.frame = audio_buf.into();
+                break;
+            }
         }
 
-        let ret = match self.frame.len() {
-            0 => None,
-            _ => Some(self.frame[self.idx]),
-        };
-        self.idx += 1;
-        ret
+        self.frame.pop_front().or_else(|| {
+            self.stream_in.send(PlayerMsg::Drained).ok();
+            None
+        })
     }
 }
 
-pub struct AudioOutput;
+pub struct AudioOutput {
+    host: rodio::cpal::Host,
+    device: rodio::cpal::Device,
+    playing: Option<DecoderSource>,
+    next_up: Option<DecoderSource>,
+}
 
 impl AudioOutput {
-    pub fn try_new() -> anyhow::Result<Self> {
-        Ok(Self)
+    pub fn try_new(device_name: &Option<String>) -> anyhow::Result<Self> {
+        let host = rodio::cpal::default_host();
+        let device = if let Some(dev_name) = device_name {
+            match find_device(&host, &dev_name) {
+                Some(device) => device,
+                None => {
+                    bail!("Cannot find device: {dev_name}");
+                }
+            }
+        } else {
+            host.default_output_device().context("No default device")?
+        };
+
+        Ok(Self {
+            host,
+            device,
+            playing: None,
+            next_up: None,
+        })
     }
 
     pub fn enqueue_new_stream(
         &mut self,
-        mut decoder: Decoder,
+        decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
         status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
         device: &Option<String>,
     ) {
+        let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
+        let decoder_source = DecoderSource::new(decoder, stream_params.volume, capacity, stream_in);
+
+        if self.playing.is_some() {
+            self.next_up = Some(decoder_source)
+        } else {
+            self.playing = Some(decoder_source);
+            if let Ok((output_stream, output_stream_h)) =
+                OutputStream::try_from_device(&self.device)
+            {
+                output_stream_h.play_once(decoder_source);
+            }
+        }
     }
 
     pub fn unpause(&mut self) -> bool {
@@ -98,13 +168,20 @@ impl AudioOutput {
     pub fn shift(&mut self) {}
 }
 
+fn find_device(host: &rodio::cpal::Host, name: &String) -> Option<Device> {
+    let mut output_devices = host.output_devices().ok()?;
+    output_devices.find(|d| match d.name() {
+        Ok(n) => n == *name,
+        Err(_) => false,
+    })
+}
+
 pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
     let host = rodio::cpal::default_host();
     let devices = host.output_devices()?;
-    let ret = devices
+    Ok(devices
         .map(|d| d.name())
         .filter(|n| n.is_ok())
         .map(|n| n.unwrap())
-        .collect();
-    Ok(ret)
+        .collect())
 }

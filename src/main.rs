@@ -196,6 +196,7 @@ fn process_slim_msg(
             info!("Switching to server at {ip_address}");
             *server_default_ip = ip_address;
         }
+
         ServerMessage::Queryname => {
             log::info!("Name query from server");
             if let Ok(name) = name.read() {
@@ -203,12 +204,14 @@ fn process_slim_msg(
                 slim_tx_in.send(ClientMessage::Name(name.to_owned())).ok();
             }
         }
+        
         ServerMessage::Setname(new_name) => {
             if let Ok(mut name) = name.write() {
                 info!("Set name to {new_name}");
                 *name = new_name;
             }
         }
+        
         ServerMessage::Gain(l, r) => {
             info!("Setting volume to ({l}, {r})");
             if let Ok(mut vol) = volume.lock() {
@@ -216,6 +219,7 @@ fn process_slim_msg(
                 vol[1] = r.sqrt() as f32;
             }
         }
+        
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
             if let Ok(mut status) = status.lock() {
@@ -225,6 +229,7 @@ fn process_slim_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+        
         ServerMessage::Stop => {
             info!("Stop playback received");
             output.stop();
@@ -238,6 +243,7 @@ fn process_slim_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+        
         ServerMessage::Flush => {
             info!("Flushing");
             output.flush();
@@ -251,6 +257,7 @@ fn process_slim_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+        
         ServerMessage::Pause(interval) => {
             info!("Pause requested with interval {:?}", interval);
             if interval.is_zero() {
@@ -270,6 +277,7 @@ fn process_slim_msg(
                 }
             }
         }
+        
         ServerMessage::Unpause(interval) => {
             info!("Resume requested with interval {:?}", interval);
             if interval.is_zero() {
@@ -294,10 +302,12 @@ fn process_slim_msg(
                 });
             }
         }
+        
         ServerMessage::Skip(interval) => {
             info!("Skip ahead: {:?}", interval);
             skip.store(interval);
         }
+        
         ServerMessage::Stream {
             http_headers,
             server_ip,
@@ -353,6 +363,7 @@ fn process_slim_msg(
                 }
             }
         }
+        
         cmd => {
             warn!("Unimplemented command: {:?}", cmd);
         }
@@ -377,20 +388,18 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+
         PlayerMsg::Drained => {
             info!("End of track");
             output.shift();
-            if output.unpause() {
-                info!("Sending new track started");
-                if let Ok(mut status) = status.lock() {
-                    let msg = status.make_status_message(StatusCode::TrackStarted);
-                    slim_tx_in.send(msg).ok();
-                }
-            }
+            output.unpause();
         }
+
         PlayerMsg::Pause => {
+            info!("Pausing track");
             output.pause();
         }
+
         PlayerMsg::Unpause => {
             if output.unpause() {
                 info!("Sending track unpaused by player");
@@ -400,6 +409,7 @@ fn process_stream_msg(
                 }
             }
         }
+
         PlayerMsg::Connected => {
             if let Ok(mut status) = status.lock() {
                 info!("Sending stream connected");
@@ -407,6 +417,7 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+
         PlayerMsg::BufferThreshold => {
             if let Ok(mut status) = status.lock() {
                 info!("Sending buffer threshold reached");
@@ -414,6 +425,7 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+
         PlayerMsg::NotSupported => {
             warn!("Unsupported format");
             if let Ok(mut status) = status.lock() {
@@ -421,6 +433,7 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+
         PlayerMsg::StreamEstablished => {
             if let Ok(mut status) = status.lock() {
                 info!("Sending stream established");
@@ -428,6 +441,7 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+
         PlayerMsg::TrackStarted => {
             info!("Sending track started");
             if let Ok(mut status) = status.lock() {
@@ -435,6 +449,7 @@ fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
         }
+        
         PlayerMsg::Decoder((decoder, stream_params)) => output.enqueue_new_stream(
             decoder,
             stream_in.clone(),

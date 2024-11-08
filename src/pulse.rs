@@ -27,6 +27,8 @@ use crate::{
     PlayerMsg, StreamParams,
 };
 
+const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
+
 #[derive(Clone)]
 pub struct Stream {
     inner: Rc<RefCell<libpulse_binding::stream::Stream>>,
@@ -197,8 +199,16 @@ impl AudioOutput {
         device: &Option<String>,
     ) {
         // Create an audio buffer to hold raw u8 samples
-        let mut audio_buf =
-            Vec::with_capacity(decoder.dur_to_samples(stream_params.output_threshold) as usize);
+        let buf_size = {
+            let num_samps = decoder.dur_to_samples(stream_params.output_threshold) as usize;
+            if num_samps < MIN_AUDIO_BUFFER_SIZE {
+                MIN_AUDIO_BUFFER_SIZE
+            } else {
+                num_samps
+            }
+        };
+
+        let mut audio_buf = Vec::with_capacity(buf_size);
 
         // Prefill audio buffer to threshold
         loop {
@@ -245,10 +255,17 @@ impl AudioOutput {
         let drained = Rc::new(RefCell::new(false));
         let drained2 = drained.clone();
         let sm_ref = Rc::downgrade(&stream.clone().into_inner());
+        let mut start_flag = true;
+
         (*self.mainloop).borrow_mut().lock();
         stream.set_write_callback(Box::new(move |len| {
             if *drained.borrow() {
                 return;
+            }
+
+            if start_flag {
+                stream_in_r1.send(PlayerMsg::TrackStarted).ok();
+                start_flag = false;
             }
 
             loop {
@@ -406,14 +423,14 @@ impl AudioOutput {
         &mut self,
         stream: Stream,
         autostart: slimproto::proto::AutoStart,
-        stream_in: Sender<PlayerMsg>,
+        _stream_in: Sender<PlayerMsg>,
     ) {
         if self.playing.is_some() {
             self.next_up = Some(stream);
         } else {
             self.playing = Some(stream);
             if autostart == slimproto::proto::AutoStart::Auto {
-                stream_in.send(PlayerMsg::TrackStarted).ok();
+                // stream_in.send(PlayerMsg::TrackStarted).ok();
                 self.play();
             }
         }

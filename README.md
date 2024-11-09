@@ -12,7 +12,19 @@ codebase and far more run-time and compile-time options than Vibe.
 However, if you'd like to give Vibe a go then please do, it should be 
 considered as beta code and any real-world testing is welcome.
 
-Other than pulseaudio Vibe has zero run-time dependencies, all the stream
+## Output
+This is the `master` branch of Vibe which means that it outputs its sounds
+via `pulseaudio`. Because `pipewire` implements the `pulseaudio`
+API, Vibe can also output sounds via `pipewire`.
+
+ See the `rodio` branch for output via
+[rodio][`rodio`] / [cpal][`cpal`].
+
+On Linux Vibe needs the `pulseaudio` development files. These are provided as
+part of the `libpulse-dev` package on Debian and Ubuntu distributions.
+
+## Dependencies
+Vibe has zero run-time dependencies, all the stream
 demultiplexing and codec decoding is done natively thanks to 
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
 amazing work!
@@ -35,12 +47,7 @@ or you can switch them all on with `opt-simd`.
 - Play some radio streams
 
 ## What Vibe can't do
-- Synchronise with other players (although it *should*, this is a WIP) but I need help with pulseaudio
-- Can't play some radio streams, but neither can my Squeezebox.
-
-## Compiling
-In order to compile, you will need to install the development packages for
-libpulse (this is `libpulse-dev` for Ubuntu).
+- Synchronise with other players (although it *should*, this is a WIP).
 
 ## Background
 Vibe is 100% written in [Rust][`rust`] and has all the benefits that Rust
@@ -54,3 +61,5 @@ any suggestions at [the home page](https://github.com/GeoffClements/Vibe).
 [`squeezelite`]: https://github.com/ralph-irving/squeezelite
 [`symphonia`]: https://crates.io/crates/symphonia
 [`rust`]: https://www.rust-lang.org/
+[`rodio`]: https://crates.io/crates/rodio
+[`cpal`]: https://crates.io/crates/cpal

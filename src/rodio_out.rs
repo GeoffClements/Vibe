@@ -194,6 +194,9 @@ impl AudioOutput {
         let decoder_source =
             DecoderSource::new(decoder, stream_params.volume, capacity, stream_in.clone());
 
+        // TODO: implement skip
+        let _ = stream_params.skip;
+
         stream_in.send(PlayerMsg::StreamEstablished).ok();
 
         if let Some(ref mut playing_stream) = self.playing {

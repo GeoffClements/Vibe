@@ -2,7 +2,6 @@ use std::{
     cell::RefCell,
     ops::Deref,
     rc::Rc,
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -20,7 +19,6 @@ use libpulse_binding::{
     volume::ChannelVolumes,
 };
 use log::warn;
-use slimproto::status::StatusData;
 
 use crate::{
     decode::{AudioFormat, Decoder, DecoderError},
@@ -116,6 +114,15 @@ impl Stream {
         self.play();
     }
 
+    fn get_pos(&self) -> Duration {
+        let micros = match (*self.inner).borrow().get_time() {
+            Ok(Some(micros)) => micros,
+            _ => libpulse_binding::time::MicroSeconds(0),
+        };
+
+        Duration::from_micros(micros.0)
+    }
+
     fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
         std::thread::spawn(move || {
             while op.get_state() == libpulse_binding::operation::State::Running {
@@ -194,7 +201,6 @@ impl AudioOutput {
         &mut self,
         mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
-        status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
         device: &Option<String>,
     ) {
@@ -320,16 +326,6 @@ impl AudioOutput {
                                 SeekMode::Relative,
                             )
                             .ok();
-                        (*sm.as_ptr()).update_timing_info(None);
-                    }
-
-                    if let Ok(Some(stream_time)) = unsafe { (*sm.as_ptr()).get_time() } {
-                        if let Ok(mut status) = status.lock() {
-                            status.set_elapsed_milli_seconds(stream_time.as_millis() as u32);
-                            status.set_elapsed_seconds(stream_time.as_secs() as u32);
-                            status.set_output_buffer_size(audio_buf.capacity() as u32);
-                            status.set_output_buffer_fullness(audio_buf.len() as u32);
-                        };
                     }
                 }
             }
@@ -378,7 +374,8 @@ impl AudioOutput {
             })));
         }
 
-        let flags = SmFlagSet::START_CORKED;
+        let flags =
+            SmFlagSet::START_CORKED | SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::INTERPOLATE_TIMING;
 
         stream.connect_playback(device.as_deref(), None, flags, None, None)?;
 
@@ -430,7 +427,6 @@ impl AudioOutput {
         } else {
             self.playing = Some(stream);
             if autostart == slimproto::proto::AutoStart::Auto {
-                // stream_in.send(PlayerMsg::TrackStarted).ok();
                 self.play();
             }
         }
@@ -484,6 +480,13 @@ impl AudioOutput {
                     pa_stream.disconnect().ok();
                 });
             };
+        }
+    }
+
+    pub fn get_dur(&self) -> Duration {
+        match self.playing {
+            Some(ref stream) => stream.get_pos(),
+            None => Duration::ZERO,
         }
     }
 }

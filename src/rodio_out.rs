@@ -1,15 +1,12 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex}, time::Duration,
-};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use anyhow::{self, bail, Context};
-use crossbeam::channel::Sender;
+use crossbeam::{atomic::AtomicCell, channel::Sender};
 use log::warn;
 use rodio::{
     cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamHandle, Sink, Source,
 };
-use slimproto::status::StatusData;
+use slimproto::proto::AutoStart;
 
 use crate::{
     decode::{Decoder, DecoderError},
@@ -21,7 +18,7 @@ const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 pub struct DecoderSource {
     decoder: Decoder,
     frame: VecDeque<f32>,
-    volume: Arc<Mutex<Vec<f32>>>,
+    stream_params: StreamParams,
     stream_in: Sender<PlayerMsg>,
     start_flag: bool,
     eod_flag: bool,
@@ -30,14 +27,14 @@ pub struct DecoderSource {
 impl DecoderSource {
     fn new(
         decoder: Decoder,
-        volume: Arc<Mutex<Vec<f32>>>,
+        stream_params: StreamParams,
         capacity: usize,
         stream_in: Sender<PlayerMsg>,
     ) -> Self {
         DecoderSource {
             decoder,
             frame: VecDeque::with_capacity(capacity),
-            volume,
+            stream_params,
             stream_in,
             start_flag: true,
             eod_flag: false,
@@ -81,7 +78,7 @@ impl Iterator for DecoderSource {
                 match self.decoder.fill_sample_buffer::<f32>(
                     &mut audio_buf,
                     Some(2 * MIN_AUDIO_BUFFER_SIZE),
-                    self.volume.clone(),
+                    self.stream_params.volume.clone(),
                 ) {
                     Ok(()) => {}
 
@@ -153,6 +150,16 @@ impl Stream {
     fn stop(&self) {
         self.sink.stop();
     }
+
+    fn seek(&self, pos: Duration) {
+        self.sink
+            .try_seek(pos)
+            .map_err(|e| {
+                warn!("Seek error {e}");
+                e
+            })
+            .ok();
+    }
 }
 
 pub struct AudioOutput {
@@ -186,16 +193,18 @@ impl AudioOutput {
         &mut self,
         decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
-        _status: Arc<Mutex<StatusData>>,
         stream_params: StreamParams,
         _device: &Option<String>,
     ) {
+        let autostart = if stream_params.autostart == AutoStart::Auto {
+            true
+        } else {
+            false
+        };
+
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
         let decoder_source =
-            DecoderSource::new(decoder, stream_params.volume, capacity, stream_in.clone());
-
-        // TODO: implement skip
-        let _ = stream_params.skip;
+            DecoderSource::new(decoder, stream_params, capacity, stream_in.clone());
 
         stream_in.send(PlayerMsg::StreamEstablished).ok();
 
@@ -204,7 +213,7 @@ impl AudioOutput {
         } else {
             if let Ok(mut stream) = Stream::try_from_device(&self.device) {
                 stream.play(decoder_source);
-                if stream_params.autostart != slimproto::proto::AutoStart::Auto {
+                if !autostart {
                     stream.pause();
                 }
                 self.playing = Some(stream);
@@ -246,7 +255,14 @@ impl AudioOutput {
     pub fn get_dur(&self) -> Duration {
         match self.playing {
             Some(ref stream) => stream.sink.get_pos(),
-            None => Duration::ZERO
+            None => Duration::ZERO,
+        }
+    }
+
+    pub fn skip(&self, skip: Arc<AtomicCell<Duration>>) {
+        let skip = skip.take();
+        if let Some(ref stream) = self.playing {
+            stream.seek(skip);
         }
     }
 }

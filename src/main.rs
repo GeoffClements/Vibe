@@ -71,7 +71,7 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
-    skip: Arc<AtomicCell<Duration>>,
+    _skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 }
 
@@ -309,6 +309,7 @@ fn process_slim_msg(
         ServerMessage::Skip(interval) => {
             info!("Skip ahead: {:?}", interval);
             skip.store(interval);
+            output.skip(skip.clone());
         }
         
         ServerMessage::Stream {
@@ -453,7 +454,6 @@ fn process_stream_msg(
         PlayerMsg::Decoder((decoder, stream_params)) => output.enqueue_new_stream(
             decoder,
             stream_in.clone(),
-            status.clone(),
             stream_params,
             device,
         ),

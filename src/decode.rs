@@ -204,7 +204,7 @@ impl Decoder {
             .decode(&packet)
             .map_err(|e| DecoderError::StreamError(e))?;
 
-        let vol = volume.lock().map(|v| v[0]).unwrap_or(1.0);
+        let vol = volume.lock().map(|v| v[0]).unwrap_or_default();
 
         let mut audio_buffer = decoded.make_equivalent();
         decoded.convert::<f32>(&mut audio_buffer);

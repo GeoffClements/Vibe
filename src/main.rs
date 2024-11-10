@@ -113,11 +113,18 @@ fn main() -> anyhow::Result<()> {
     let mut output = AudioOutput::try_new()?;
 
     loop {
+        let name = {
+            let name = match hostname::get().map(|s| s.into_string()) {
+                Ok(Ok(hostname)) => cli.name.clone() + &format!("({hostname})"),
+                _ => cli.name.clone(),
+            };
+            Arc::new(RwLock::new(name))
+        };
+
         // Start the slim protocol threads
         let status = Arc::new(Mutex::new(StatusData::default()));
         let start_time = Instant::now();
         let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
-        let name = Arc::new(RwLock::new(cli.name.to_owned()));
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
         let (slim_tx_in, slim_tx_out) = bounded(1);
         let (slim_rx_in, slim_rx_out) = bounded(1);
@@ -453,11 +460,8 @@ fn process_stream_msg(
             }
         }
 
-        PlayerMsg::Decoder((decoder, stream_params)) => output.enqueue_new_stream(
-            decoder,
-            stream_in.clone(),
-            stream_params,
-            device,
-        ),
+        PlayerMsg::Decoder((decoder, stream_params)) => {
+            output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+        }
     }
 }

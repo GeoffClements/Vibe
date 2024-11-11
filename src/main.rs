@@ -114,6 +114,14 @@ fn main() -> anyhow::Result<()> {
     let mut output = AudioOutput::try_new(&cli.device)?;
 
     loop {
+        let name = {
+            let name = match hostname::get().map(|s| s.into_string()) {
+                Ok(Ok(hostname)) => cli.name.clone() + &format!("@{hostname}"),
+                _ => cli.name.clone(),
+            };
+            Arc::new(RwLock::new(name))
+        };
+
         // Start the slim protocol threads
         let status = Arc::new(Mutex::new(StatusData::default()));
         let start_time = Instant::now();

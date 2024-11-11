@@ -115,7 +115,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         let name = {
             let name = match hostname::get().map(|s| s.into_string()) {
-                Ok(Ok(hostname)) => cli.name.clone() + &format!("({hostname})"),
+                Ok(Ok(hostname)) => cli.name.clone() + &format!("@{hostname}"),
                 _ => cli.name.clone(),
             };
             Arc::new(RwLock::new(name))

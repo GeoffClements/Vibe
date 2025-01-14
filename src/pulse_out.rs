@@ -489,36 +489,35 @@ impl AudioOutput {
             None => Duration::ZERO,
         }
     }
+
+    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<String>> {
+        let mut ret = Vec::new();
+        let (s, r) = bounded(1);
+    
+        (*self.mainloop).borrow_mut().lock();
+        let _op = (*self.context)
+            .borrow_mut()
+            .introspect()
+            .get_sink_info_list(move |listresult| match listresult {
+                ListResult::Item(item) => {
+                    s.send(item.name.as_ref().map(|n| n.to_string())).ok();
+                }
+                ListResult::End | ListResult::Error => {
+                    s.send(None).ok();
+                }
+            });
+        (*self.mainloop).borrow_mut().unlock();
+    
+        while let Some(name) = r.recv()? {
+            ret.push(name);
+        }
+    
+        Ok(ret)
+    }
 }
 
 impl Drop for AudioOutput {
     fn drop(&mut self) {
         (*self.context).borrow_mut().disconnect();
     }
-}
-
-pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
-    let output = AudioOutput::try_new()?;
-    let mut ret = Vec::new();
-    let (s, r) = bounded(1);
-
-    (*output.mainloop).borrow_mut().lock();
-    let _op = (*output.context)
-        .borrow_mut()
-        .introspect()
-        .get_sink_info_list(move |listresult| match listresult {
-            ListResult::Item(item) => {
-                s.send(item.name.as_ref().map(|n| n.to_string())).ok();
-            }
-            ListResult::End | ListResult::Error => {
-                s.send(None).ok();
-            }
-        });
-    (*output.mainloop).borrow_mut().unlock();
-
-    while let Some(name) = r.recv()? {
-        ret.push(name);
-    }
-
-    Ok(ret)
 }

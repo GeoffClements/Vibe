@@ -14,17 +14,20 @@ use crossbeam::{
     channel::{bounded, Select, Sender},
 };
 
+use audio_out::AudioOutput;
 use log::{info, warn};
-use pulse::AudioOutput;
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, ServerMessage, SLIM_PORT},
     status::{StatusCode, StatusData},
 };
 
+mod audio_out;
 mod decode;
 mod proto;
-mod pulse;
+mod pulse_out;
+#[cfg(feature = "rodio")]
+mod rodio_out;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
@@ -55,6 +58,9 @@ struct Cli {
             .map(|s| s.parse::<log::LevelFilter>().unwrap()),
         help = "Set the highest log level")]
     loglevel: log::LevelFilter,
+
+    #[arg(short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]))]
+    system: String,
 }
 
 fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
@@ -94,10 +100,12 @@ fn main() -> anyhow::Result<()> {
         .with_level(cli.loglevel)
         .init()?;
 
+    let mut output = AudioOutput::try_new(&cli.system, &cli.device)?;
+
     // List the output devices and terminate
     if cli.list {
         println!("Output devices:");
-        let names = pulse::get_output_device_names()?;
+        let names = output.get_output_device_names()?;
         names
             .iter()
             .enumerate()
@@ -109,8 +117,6 @@ fn main() -> anyhow::Result<()> {
         println!();
         return Ok(());
     }
-
-    let mut output = AudioOutput::try_new()?;
 
     loop {
         let name = {

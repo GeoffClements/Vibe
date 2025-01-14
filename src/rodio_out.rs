@@ -163,7 +163,7 @@ impl Stream {
 }
 
 pub struct AudioOutput {
-    _host: rodio::cpal::Host,
+    host: rodio::cpal::Host,
     device: rodio::cpal::Device,
     playing: Option<Stream>,
 }
@@ -183,7 +183,7 @@ impl AudioOutput {
         };
 
         Ok(Self {
-            _host: host,
+            host,
             device,
             playing: None,
         })
@@ -259,11 +259,21 @@ impl AudioOutput {
         }
     }
 
+    #[allow(unused)]
     pub fn skip(&self, skip: Arc<AtomicCell<Duration>>) {
         let skip = skip.take();
         if let Some(ref stream) = self.playing {
             stream.seek(skip);
         }
+    }
+
+    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<String>> {
+        let devices = self.host.output_devices()?;
+        Ok(devices
+            .map(|d| d.name())
+            .filter(|n| n.is_ok())
+            .map(|n| n.unwrap())
+            .collect())
     }
 }
 
@@ -273,14 +283,4 @@ fn find_device(host: &rodio::cpal::Host, name: &String) -> Option<Device> {
         Ok(n) => n == *name,
         Err(_) => false,
     })
-}
-
-pub fn get_output_device_names() -> anyhow::Result<Vec<String>> {
-    let host = rodio::cpal::default_host();
-    let devices = host.output_devices()?;
-    Ok(devices
-        .map(|d| d.name())
-        .filter(|n| n.is_ok())
-        .map(|n| n.unwrap())
-        .collect())
 }

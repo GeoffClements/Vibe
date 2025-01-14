@@ -217,7 +217,7 @@ impl Decoder {
         buffer: &mut Vec<T>,
         limit: Option<usize>,
         volume: Arc<Mutex<Vec<f32>>>,
-    ) -> anyhow::Result<()>
+    ) -> Result<(), DecoderError>
     where
         T: Sample + FromSample<f32>,
     {

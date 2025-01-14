@@ -52,16 +52,16 @@ struct Cli {
     #[arg(short, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
+    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]),
+            help = "Which audio system to use")]
+    system: String,
+
     #[arg(long,
         default_value = "off",
         value_parser = PossibleValuesParser::new(["trace", "debug", "error", "warn", "info", "off"])
             .map(|s| s.parse::<log::LevelFilter>().unwrap()),
         help = "Set the highest log level")]
     loglevel: log::LevelFilter,
-
-    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]),
-        help = "Which audio system to use")]
-    system: String,
 }
 
 fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {

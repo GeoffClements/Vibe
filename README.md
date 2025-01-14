@@ -5,31 +5,76 @@ Vibe is a music player that uses the [SLIM TCP protocol][`slimtcp`] to
 connect to a [Lyrion Music Server][`lms`] formally known as a
 Logitech Media Server.
 
-If you're looking for a well-tested, proven player then this is *not* it, 
-instead you need [squeezelite][`squeezelite`] which has a robust, well-maintained
-codebase and far more run-time and compile-time options than Vibe.
+Vibe is intended to be run as a user daemon and designed to be simple and
+as unobtrusive as possible.
 
-However, if you'd like to give Vibe a go then please do, it should be 
-considered as beta code and any real-world testing is welcome.
+I use Vibe as my daily driver, so it gets lots of use by me and I fix
+bugs as I find them, but this is on a linux system and using the 
+`pulseaudio` output. For anything else, I rely on bug reports but
+I'm limited to testing on a Linux system only.
+
+## Running
+```
+vibe -h
+```
+This will provide the options you can use.
+
+There is a systemd service file in the resources directory
+which you can adapt to your needs.
+
+Once compiled, move the `vibe` executable to where you want on your
+system then edit the `vibe_daemon.service` file so that the
+`ExecStart=` line points to it, then add options, if any, to the 
+vibe daemon.
+
+Copy the systemd service file to `~/.config/systemd/user/` and then
+tell systemd of the new service with
+```bash
+systemctl --user daemon-reload
+```
+You only need to do this once.
+
+Start the service with
+```bash
+systemctl --user start vibe_daemon.service
+```
+
+You can make it so that vibe will start whenever you login with
+```bash
+systemctl --user enable vibe_daemon.service
+```
+
 
 ## Output
-This is the `master` branch of Vibe which means that it outputs its sounds
-via `pulseaudio`. Because `pipewire` implements the `pulseaudio`
-API, Vibe can also output sounds via `pipewire`.
+By default, Vibe uses the `pulseaudio` API which means that it can play
+sounds both with the `pulseaudio` system and with the `pipewire` system, thanks
+to the fact that `pipewire` implements the `pulseaudio` API.
 
- See the `rodio` branch for output via
-[rodio][`rodio`] / [cpal][`cpal`].
+There is also the compile-time option `rodio`, for playing audio via other systems
+such as ALSA. This uses the `rodio` crate which, in turn, uses the `cpal` crate.
+This means that the following hosts are possible:
+- Linux (via ALSA or JACK)
+- Windows (via WASAPI by default, see ASIO instructions below)
+- macOS (via CoreAudio)
+- iOS (via CoreAudio)
+- Android (via Oboe)
+- Emscripten
 
-On Linux Vibe needs the `pulseaudio` development files. These are provided as
+However, even if the `rodio` feature is selected, Vibe still has a dependency
+on `pulseaudo` and this might prevent it being used on other platforms.
+
+## Compilation
+
+### Compile-time Dependencies
+Vibe needs the `pulseaudio` development files. These are provided as
 part of the `libpulse-dev` package on Debian and Ubuntu distributions.
 
-## Dependencies
-Vibe has zero run-time dependencies, all the stream
-demultiplexing and codec decoding is done natively thanks to 
-[Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
-amazing work!
+If the `rodio` feature is selected, then Vibe also needs
+the ALSA development files. These are provided as part of the libasound2-dev
+package on Debian and Ubuntu distributions and alsa-lib-devel on Fedora.
 
-Symphonia has optimisation features that are off by default, you can switch them on 
+### Features
+Symphonia has optimization features that are off by default, you can switch them on 
 with `--features symphonia/<optimisation>`. These features are:
  - `opt-simd-sse`
  - `opt-simd-avx`
@@ -37,24 +82,18 @@ with `--features symphonia/<optimisation>`. These features are:
 
 or you can switch them all on with `opt-simd`.
 
-## What Vibe can do
-- Play Flac, AAC, Apple lossless, Ogg/Vorbis, MP3 and PCM streams
-- Gapless playback when possible
-- Stop, play, pause and resume
-- Volume control
-- Select output device
-- Choose the name of the player
-- Play some radio streams
+If the Symphonia devs have them off by default then so will I.
 
-## What Vibe can't do
-- Synchronise with other players (although it *should*, this is a WIP).
+To use `rodio`/`cpal`, use the `rodio` feature. This will add the 
+ability to use `--system=rodio` on the command line. Note that when
+this feature flag is used, Vibe will still default to `pulseaudio`.
 
-## Background
-Vibe is 100% written in [Rust][`rust`] and has all the benefits that Rust
-provides such as memory safety while being as performant as C. I wrote Vibe
-as an exercise to practice writing a real application in Rust. If you enjoy
-using it, please let me know. Equally please file any bug reports and lodge
-any suggestions at [the home page](https://github.com/GeoffClements/Vibe).
+## Dependencies
+Vibe has zero run-time dependencies, all the stream
+demultiplexing and codec decoding is done natively thanks to 
+[Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
+amazing work!
+
 
 [`slimtcp`]: https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol
 [`lms`]: https://lyrion.org/

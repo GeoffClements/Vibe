@@ -59,7 +59,8 @@ struct Cli {
         help = "Set the highest log level")]
     loglevel: log::LevelFilter,
 
-    #[arg(short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]))]
+    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]),
+        help = "Which audio system to use")]
     system: String,
 }
 

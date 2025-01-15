@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/GeoffClements/Vibe"
 homepage = "https://github.com/GeoffClements/Vibe"
 categories = ["command-line-utilities", "multimedia::audio"]
-keywords = ["audio", "slim", "music"]
+keywords = ["lyrion", "audio", "slim", "music"]
 readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 

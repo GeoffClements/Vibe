@@ -15,7 +15,6 @@ pub enum AudioOutput {
 }
 
 impl AudioOutput {
-    #[allow(unused)]
     pub fn try_new(system: &str, device: &Option<String>) -> anyhow::Result<Self> {
         Ok(match system {
             #[cfg(feature = "rodio")]

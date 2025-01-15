@@ -1,13 +1,9 @@
-use std::{
-    cell::RefCell,
-    ops::Deref,
-    rc::Rc,
-    time::Duration,
-};
+use std::{cell::RefCell, ops::Deref, rc::Rc, time::Duration};
 
 use anyhow::anyhow;
 use crossbeam::channel::{bounded, Sender};
-use libpulse_binding::{
+use log::warn;
+use pulse::{
     callbacks::ListResult,
     context::{Context, FlagSet as CxFlagSet, State},
     def::BufferAttr,
@@ -18,7 +14,6 @@ use libpulse_binding::{
     stream::{FlagSet as SmFlagSet, SeekMode},
     volume::ChannelVolumes,
 };
-use log::warn;
 
 use crate::{
     decode::{AudioFormat, Decoder, DecoderError},
@@ -29,40 +24,30 @@ const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(Clone)]
 pub struct Stream {
-    inner: Rc<RefCell<libpulse_binding::stream::Stream>>,
+    inner: Rc<RefCell<pulse::stream::Stream>>,
 }
 
 impl Stream {
     fn new(cx: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
         let spec = Spec {
             format: match decoder.format() {
-                AudioFormat::I16 | AudioFormat::U16 => libpulse_binding::sample::Format::S16NE,
-                AudioFormat::I32 | AudioFormat::U32 => libpulse_binding::sample::Format::S32NE,
-                AudioFormat::F32 => libpulse_binding::sample::Format::FLOAT32NE,
+                AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
+                AudioFormat::I32 | AudioFormat::U32 => pulse::sample::Format::S32NE,
+                AudioFormat::F32 => pulse::sample::Format::FLOAT32NE,
             },
             rate: decoder.sample_rate(),
             channels: decoder.channels(),
         };
 
         // Create a pulseaudio stream
-        let stream = match libpulse_binding::stream::Stream::new(
-            &mut (*cx).borrow_mut(),
-            "Music",
-            &spec,
-            None,
-        ) {
-            Some(stream) => stream,
-            None => {
-                return None;
-            }
-        };
+        let stream = pulse::stream::Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None)?;
 
         Some(Self {
             inner: Rc::new(RefCell::new(stream)),
         })
     }
 
-    fn into_inner(self) -> Rc<RefCell<libpulse_binding::stream::Stream>> {
+    fn into_inner(self) -> Rc<RefCell<pulse::stream::Stream>> {
         self.inner
     }
 
@@ -90,14 +75,14 @@ impl Stream {
         attr: Option<&BufferAttr>,
         flags: SmFlagSet,
         volume: Option<&ChannelVolumes>,
-        sync_stream: Option<&mut libpulse_binding::stream::Stream>,
+        sync_stream: Option<&mut pulse::stream::Stream>,
     ) -> Result<(), PAErr> {
         (*self.inner)
             .borrow_mut()
             .connect_playback(dev, attr, flags, volume, sync_stream)
     }
 
-    fn get_state(&self) -> libpulse_binding::stream::State {
+    fn get_state(&self) -> pulse::stream::State {
         (*self.inner).borrow_mut().get_state()
     }
 
@@ -117,7 +102,7 @@ impl Stream {
     fn get_pos(&self) -> Duration {
         let micros = match (*self.inner).borrow().get_time() {
             Ok(Some(micros)) => micros,
-            _ => libpulse_binding::time::MicroSeconds(0),
+            _ => pulse::time::MicroSeconds(0),
         };
 
         Duration::from_micros(micros.0)
@@ -125,7 +110,7 @@ impl Stream {
 
     fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
         std::thread::spawn(move || {
-            while op.get_state() == libpulse_binding::operation::State::Running {
+            while op.get_state() == pulse::operation::State::Running {
                 std::thread::sleep(Duration::from_millis(10));
             }
         });
@@ -142,12 +127,12 @@ pub struct AudioOutput {
 impl AudioOutput {
     pub fn try_new() -> anyhow::Result<Self> {
         let ml = Rc::new(RefCell::new(
-            Mainloop::new().ok_or(libpulse_binding::error::Code::ConnectionRefused)?,
+            Mainloop::new().ok_or(pulse::error::Code::ConnectionRefused)?,
         ));
 
         let cx = Rc::new(RefCell::new(
             Context::new((*ml).borrow_mut().deref(), "Vibe")
-                .ok_or(libpulse_binding::error::Code::ConnectionRefused)?,
+                .ok_or(pulse::error::Code::ConnectionRefused)?,
         ));
 
         // Context state change callback
@@ -382,15 +367,14 @@ impl AudioOutput {
         // Wait for stream to be ready
         loop {
             match stream.get_state() {
-                libpulse_binding::stream::State::Ready => {
+                pulse::stream::State::Ready => {
                     break;
                 }
-                libpulse_binding::stream::State::Failed
-                | libpulse_binding::stream::State::Terminated => {
+                pulse::stream::State::Failed | pulse::stream::State::Terminated => {
                     (*self.mainloop).borrow_mut().unlock();
                     (*self.mainloop).borrow_mut().stop();
-                    return Err(anyhow!(libpulse_binding::error::PAErr(
-                        libpulse_binding::error::Code::ConnectionTerminated as i32,
+                    return Err(anyhow!(pulse::error::PAErr(
+                        pulse::error::Code::ConnectionTerminated as i32,
                     )));
                 }
                 _ => {
@@ -493,7 +477,7 @@ impl AudioOutput {
     pub fn get_output_device_names(&self) -> anyhow::Result<Vec<String>> {
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
-    
+
         (*self.mainloop).borrow_mut().lock();
         let _op = (*self.context)
             .borrow_mut()
@@ -507,11 +491,11 @@ impl AudioOutput {
                 }
             });
         (*self.mainloop).borrow_mut().unlock();
-    
+
         while let Some(name) = r.recv()? {
             ret.push(name);
         }
-    
+
         Ok(ret)
     }
 }

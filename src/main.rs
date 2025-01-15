@@ -481,6 +481,8 @@ fn process_stream_msg(
         PlayerMsg::TrackStarted => {
             info!("Sending track started");
             if let Ok(mut status) = status.lock() {
+                status.set_elapsed_milli_seconds(0);
+                status.set_elapsed_seconds(0);
                 let msg = status.make_status_message(StatusCode::TrackStarted);
                 slim_tx_in.send(msg).ok();
             }

@@ -14,7 +14,7 @@ bugs as I find them, but this is on a linux system and using the
 I'm limited to testing on a Linux system only.
 
 ## Running
-To a list of run-time options:
+To list the run-time options:
 ```
 vibe -h
 ```

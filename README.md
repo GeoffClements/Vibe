@@ -49,7 +49,6 @@ You can make it so that vibe will start whenever you login with
 systemctl --user enable vibe_daemon.service
 ```
 
-
 ## Output
 By default, Vibe uses the `pulse` feature flag which means it uses 
 the `pulseaudio` API. This means that it can play
@@ -61,7 +60,7 @@ such as ALSA. This uses the `rodio` crate which, in turn, uses the `cpal` crate.
 This means that the following hosts are possible (according to `cpal` 
 documentation):
 - Linux (via ALSA or JACK)
-- Windows (via WASAPI by default, see ASIO instructions below)
+- Windows (via WASAPI by default, also ASIO)
 - macOS (via CoreAudio)
 - iOS (via CoreAudio)
 - Android (via Oboe)
@@ -69,13 +68,14 @@ documentation):
 
 ## Compilation
 
-### Compile-time Dependencies
-Vibe needs the `pulseaudio` development files. These are provided as
+### Compile-time dependencies
+Vibe needs the `pulseaudio` development files, but this can be disabled, see below.
+These are provided as
 part of the `libpulse-dev` package on Debian and Ubuntu distributions.
 
 If the `rodio` feature is selected, then Vibe also needs
-the ALSA development files. These are provided as part of the libasound2-dev
-package on Debian and Ubuntu distributions and alsa-lib-devel on Fedora.
+the ALSA development files. These are provided as part of the `libasound2-dev`
+package on Debian and Ubuntu distributions and `alsa-lib-devel` on Fedora.
 
 ### Features
 Symphonia has optimization features that are off by default, you can switch them on 
@@ -89,14 +89,14 @@ or you can switch them all on with `opt-simd`.
 If the Symphonia devs have them off by default then so will I.
 
 To use `rodio`/`cpal`, use the `rodio` feature. This will add the 
-ability to use `--system=rodio` on the command line. Note that when
-this feature flag is used, Vibe will still default to `pulseaudio`.
+ability to use `--system=rodio` on the command line to select the 
+rodio output. Note that when
+this feature flag is used, Vibe will still default to `pulseaudio`
+if `--system=rodio` is not specified.
 
-Even if the `rodio` feature is selected, Vibe will compile for
+When if the `rodio` feature is selected, Vibe will compile for
 both pulseaudio and rodio so will still have a dependency
-on `pulseaudo` and will default to pulseaudio unless the `--system` 
-run-time option is used to select rodio.
-
+on `pulseaudo`.
 If you want to compile without having a dependency on pulseaudio then use
 the `--no-default-features` compilation option. In this case, the rodio
 feature flag must be selected, otherwise Vibe will not compile.

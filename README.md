@@ -14,18 +14,23 @@ bugs as I find them, but this is on a linux system and using the
 I'm limited to testing on a Linux system only.
 
 ## Running
+To a list of run-time options:
 ```
 vibe -h
 ```
-This will provide the options you can use.
+
+To see all audio output devices on your machine:
+```
+vibe -l
+```
 
 There is a systemd service file in the resources directory
-which you can adapt to your needs.
+which you can adapt to your needs as follows:
 
 Once compiled, move the `vibe` executable to where you want on your
 system then edit the `vibe_daemon.service` file so that the
-`ExecStart=` line points to it, then add options, if any, to the 
-vibe daemon.
+`ExecStart=` line points to it, then add options you want, if any, to the 
+vibe command.
 
 Copy the systemd service file to `~/.config/systemd/user/` and then
 tell systemd of the new service with
@@ -46,22 +51,21 @@ systemctl --user enable vibe_daemon.service
 
 
 ## Output
-By default, Vibe uses the `pulseaudio` API which means that it can play
+By default, Vibe uses the `pulse` feature flag which means it uses 
+the `pulseaudio` API. This means that it can play
 sounds both with the `pulseaudio` system and with the `pipewire` system, thanks
 to the fact that `pipewire` implements the `pulseaudio` API.
 
 There is also the compile-time option `rodio`, for playing audio via other systems
 such as ALSA. This uses the `rodio` crate which, in turn, uses the `cpal` crate.
-This means that the following hosts are possible:
+This means that the following hosts are possible (according to `cpal` 
+documentation):
 - Linux (via ALSA or JACK)
 - Windows (via WASAPI by default, see ASIO instructions below)
 - macOS (via CoreAudio)
 - iOS (via CoreAudio)
 - Android (via Oboe)
 - Emscripten
-
-However, even if the `rodio` feature is selected, Vibe still has a dependency
-on `pulseaudo` and this might prevent it being used on other platforms.
 
 ## Compilation
 
@@ -75,7 +79,7 @@ package on Debian and Ubuntu distributions and alsa-lib-devel on Fedora.
 
 ### Features
 Symphonia has optimization features that are off by default, you can switch them on 
-with `--features symphonia/<optimisation>`. These features are:
+with `--features symphonia/<optimization>`. These features are:
  - `opt-simd-sse`
  - `opt-simd-avx`
  - `opt-simd-neon`
@@ -88,9 +92,18 @@ To use `rodio`/`cpal`, use the `rodio` feature. This will add the
 ability to use `--system=rodio` on the command line. Note that when
 this feature flag is used, Vibe will still default to `pulseaudio`.
 
+Even if the `rodio` feature is selected, Vibe will compile for
+both pulseaudio and rodio so will still have a dependency
+on `pulseaudo` and will default to pulseaudio unless the `--system` 
+run-time option is used to select rodio.
+
+If you want to compile without having a dependency on pulseaudio then use
+the `--no-default-features` compilation option. In this case, the rodio
+feature flag must be selected, otherwise Vibe will not compile.
+
 ## Dependencies
 Vibe has zero run-time dependencies, all the stream
-demultiplexing and codec decoding is done natively thanks to 
+demultiplexing and decoding is done natively thanks to 
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
 amazing work!
 

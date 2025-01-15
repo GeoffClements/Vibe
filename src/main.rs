@@ -25,6 +25,7 @@ use slimproto::{
 mod audio_out;
 mod decode;
 mod proto;
+#[cfg(feature = "pulse")]
 mod pulse_out;
 #[cfg(feature = "rodio")]
 mod rodio_out;
@@ -52,8 +53,25 @@ struct Cli {
     #[arg(short, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
-    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new(["pulse", #[cfg(feature = "rodio")]"rodio"]),
-            help = "Which audio system to use")]
+    #[cfg(all(feature = "pulse", not(feature = "rodio")))]
+    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new([
+        "pulse"]),
+        help = "Which audio system to use (only pulse is available)"
+    )]
+    system: String,
+
+    #[cfg(all(feature = "pulse", feature = "rodio"))]
+    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new([
+        "pulse", "rodio" ]),
+        help = "Which audio system to use"
+    )]
+    system: String,
+
+    #[cfg(all(not(feature = "pulse"), feature = "rodio"))]
+    #[arg(long, short = 'a', default_value = "rodio", value_parser = PossibleValuesParser::new([
+        "rodio" ]),
+        help = "Which audio system to use (only rodio is available)"
+    )]
     system: String,
 
     #[arg(long,
@@ -74,6 +92,7 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
     }
 }
 
+#[allow(unused)]
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,

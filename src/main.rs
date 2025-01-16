@@ -129,7 +129,13 @@ fn main() -> anyhow::Result<()> {
         names
             .iter()
             .enumerate()
-            .for_each(|(i, name)| println!("{}: {}", i, name));
+            .for_each(|(i, (name, description))| {
+                if description.len() > 0 {
+                    println!("{}: {} [{}]", i, name, description)
+                } else {
+                    println!("{}: {}", i, name)
+                }
+            });
         print!("Found {} device", names.len());
         if names.len() != 1 {
             print!("s");
@@ -162,11 +168,7 @@ fn main() -> anyhow::Result<()> {
         );
 
         let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
-        // let mut volume = ChannelVolumes::default();
-        // volume.set_len(2);
-
         let (stream_in, stream_out) = bounded(10);
-
         let mut select = Select::new();
         let slim_idx = select.recv(&slim_rx_out);
         let stream_idx = select.recv(&stream_out);

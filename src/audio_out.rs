@@ -98,7 +98,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<String>> {
+    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, String)>> {
         match self {
             #[cfg(feature = "pulse")]
             Self::Pulse(out) => out.get_output_device_names(),

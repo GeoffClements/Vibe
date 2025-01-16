@@ -131,7 +131,7 @@ fn main() -> anyhow::Result<()> {
             .enumerate()
             .for_each(|(i, (name, description))| {
                 if description.len() > 0 {
-                    println!("{}: {} [{}]", i, name, description)
+                    println!("{}: {}\n   {}", i, name, description)
                 } else {
                     println!("{}: {}", i, name)
                 }

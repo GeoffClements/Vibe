@@ -130,10 +130,9 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .enumerate()
             .for_each(|(i, (name, description))| {
-                if description.len() > 0 {
-                    println!("{}: {}\n   {}", i, name, description)
-                } else {
-                    println!("{}: {}", i, name)
+                println!("{}: {}", i, name);
+                if let Some(desc) = description {
+                    println!("   {}", desc);
                 }
             });
         print!("Found {} device", names.len());

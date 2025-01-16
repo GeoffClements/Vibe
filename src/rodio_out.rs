@@ -267,12 +267,12 @@ impl AudioOutput {
         }
     }
 
-    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, String)>> {
+    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let devices = self.host.output_devices()?;
         Ok(devices
             .map(|d| d.name())
             .filter(|n| n.is_ok())
-            .map(|n| (n.unwrap(), String::new()))
+            .map(|n| (n.unwrap(), None))
             .collect())
     }
 }

@@ -474,7 +474,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, String)>> {
+    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
 
@@ -485,7 +485,7 @@ impl AudioOutput {
             .get_sink_info_list(move |listresult| match listresult {
                 ListResult::Item(item) => {
                     let name = item.name.to_owned().unwrap_or_default().to_string();
-                    let description = item.description.to_owned().unwrap_or_default().to_string();
+                    let description = item.description.to_owned().map(|n| n.to_string());
                     s.send(Some((name, description))).ok();
                 }
                 ListResult::End | ListResult::Error => {

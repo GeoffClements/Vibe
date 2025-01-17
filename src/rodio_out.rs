@@ -196,11 +196,7 @@ impl AudioOutput {
         stream_params: StreamParams,
         _device: &Option<String>,
     ) {
-        let autostart = if stream_params.autostart == AutoStart::Auto {
-            true
-        } else {
-            false
-        };
+        let autostart = stream_params.autostart == AutoStart::Auto;
 
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
         let decoder_source =

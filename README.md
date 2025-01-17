@@ -94,7 +94,7 @@ rodio output. Note that when
 this feature flag is used, Vibe will still default to `pulseaudio`
 if `--system=rodio` is not specified.
 
-When if the `rodio` feature is selected, Vibe will compile for
+When the `rodio` feature is selected, Vibe will compile for
 both pulseaudio and rodio so will still have a dependency
 on `pulseaudo`.
 If you want to compile without having a dependency on pulseaudio then use

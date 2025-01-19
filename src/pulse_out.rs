@@ -126,57 +126,57 @@ pub struct AudioOutput {
 
 impl AudioOutput {
     pub fn try_new() -> anyhow::Result<Self> {
-        let ml = Rc::new(RefCell::new(
+        let mainloop = Rc::new(RefCell::new(
             Mainloop::new().ok_or(pulse::error::Code::ConnectionRefused)?,
         ));
 
-        let cx = Rc::new(RefCell::new(
-            Context::new((*ml).borrow_mut().deref(), "Vibe")
+        let context = Rc::new(RefCell::new(
+            Context::new((*mainloop).borrow_mut().deref(), "Vibe")
                 .ok_or(pulse::error::Code::ConnectionRefused)?,
         ));
 
         // Context state change callback
         {
-            let ml_ref = ml.clone();
-            let cx_ref = cx.clone();
-            (*cx)
+            let mainloop_ref = mainloop.clone();
+            let context_ref = context.clone();
+            (*context)
                 .borrow_mut()
                 .set_state_callback(Some(Box::new(move || {
-                    let state = unsafe { (*cx_ref.as_ptr()).get_state() };
+                    let state = unsafe { (*context_ref.as_ptr()).get_state() };
                     match state {
                         State::Ready | State::Terminated | State::Failed => unsafe {
-                            (*ml_ref.as_ptr()).signal(false);
+                            (*mainloop_ref.as_ptr()).signal(false);
                         },
                         _ => {}
                     }
                 })))
         }
 
-        (*cx).borrow_mut().connect(None, CxFlagSet::NOFLAGS, None)?;
-        (*ml).borrow_mut().lock();
-        (*ml).borrow_mut().start()?;
+        (*context).borrow_mut().connect(None, CxFlagSet::NOFLAGS, None)?;
+        (*mainloop).borrow_mut().lock();
+        (*mainloop).borrow_mut().start()?;
 
         // Wait for context to be ready
         loop {
-            match cx.borrow().get_state() {
+            match context.borrow().get_state() {
                 State::Ready => {
                     break;
                 }
                 State::Failed | State::Terminated => {
-                    (*ml).borrow_mut().unlock();
-                    (*ml).borrow_mut().stop();
+                    (*mainloop).borrow_mut().unlock();
+                    (*mainloop).borrow_mut().stop();
                     return Err(anyhow!("Unable to connect with pulseaudio"));
                 }
-                _ => (*ml).borrow_mut().wait(),
+                _ => (*mainloop).borrow_mut().wait(),
             }
         }
 
-        (*cx).borrow_mut().set_state_callback(None);
-        (*ml).borrow_mut().unlock();
+        (*context).borrow_mut().set_state_callback(None);
+        (*mainloop).borrow_mut().unlock();
 
         Ok(AudioOutput {
-            mainloop: ml,
-            context: cx,
+            mainloop,
+            context,
             playing: None,
             next_up: None,
         })
@@ -239,94 +239,95 @@ impl AudioOutput {
         };
         (*self.mainloop).borrow_mut().unlock();
 
-        // Add callback to pa_stream to feed music
-        let stream_in_r1 = stream_in.clone();
-        let stream_in_r2 = stream_in.clone();
-        let mut draining = false;
-        let drained = Rc::new(RefCell::new(false));
-        let drained2 = drained.clone();
-        let sm_ref = Rc::downgrade(&stream.clone().into_inner());
-        let mut start_flag = true;
+        
+        {
+            let mut start_flag = true;
+            let mut draining = false;
+            let drained = Rc::new(RefCell::new(false));
+            let stream_ref = Rc::downgrade(&stream.clone().into_inner());
+            let drained_ref = drained.clone();
+            let stream_in_ref = stream_in.clone();
+            (*self.mainloop).borrow_mut().lock();
+            stream.set_write_callback(Box::new(move |len| {
+                if *drained_ref.borrow() {
+                    return;
+                }
 
-        (*self.mainloop).borrow_mut().lock();
-        stream.set_write_callback(Box::new(move |len| {
-            if *drained.borrow() {
-                return;
-            }
+                if start_flag {
+                    stream_in_ref.send(PlayerMsg::TrackStarted).ok();
+                    start_flag = false;
+                }
 
-            if start_flag {
-                stream_in_r1.send(PlayerMsg::TrackStarted).ok();
-                start_flag = false;
-            }
+                loop {
+                    match decoder.fill_raw_buffer(
+                        &mut audio_buf,
+                        Some(len),
+                        stream_params.volume.clone(),
+                    ) {
+                        Ok(()) => {}
 
-            loop {
-                match decoder.fill_raw_buffer(
-                    &mut audio_buf,
-                    Some(len),
-                    stream_params.volume.clone(),
-                ) {
-                    Ok(()) => {}
+                        Err(DecoderError::EndOfDecode) => {
+                            if !draining {
+                                stream_in_ref.send(PlayerMsg::EndOfDecode).ok();
+                                draining = true;
+                            }
+                        }
 
-                    Err(DecoderError::EndOfDecode) => {
-                        if !draining {
-                            stream_in_r1.send(PlayerMsg::EndOfDecode).ok();
+                        Err(DecoderError::Unhandled) => {
+                            warn!("Unhandled format");
+                            stream_in_ref.send(PlayerMsg::NotSupported).ok();
                             draining = true;
                         }
-                    }
 
-                    Err(DecoderError::Unhandled) => {
-                        warn!("Unhandled format");
-                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                        draining = true;
-                    }
+                        Err(DecoderError::StreamError(e)) => {
+                            warn!("Error reading data stream: {}", e);
+                            stream_in_ref.send(PlayerMsg::NotSupported).ok();
+                            draining = true;
+                        }
 
-                    Err(DecoderError::StreamError(e)) => {
-                        warn!("Error reading data stream: {}", e);
-                        stream_in_r1.send(PlayerMsg::NotSupported).ok();
-                        draining = true;
+                        Err(DecoderError::Retry) => {
+                            continue;
+                        }
                     }
+                    break;
+                }
 
-                    Err(DecoderError::Retry) => {
-                        continue;
+                if audio_buf.len() > 0 {
+                    let buf_len = if audio_buf.len() < len {
+                        audio_buf.len()
+                    } else {
+                        len
+                    };
+
+                    let offset = decoder.dur_to_samples(stream_params.skip.take()) as i64;
+
+                    if let Some(stream) = stream_ref.upgrade() {
+                        unsafe {
+                            (*stream.as_ptr())
+                                .write_copy(
+                                    &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                                    offset,
+                                    SeekMode::Relative,
+                                )
+                                .ok();
+                        }
                     }
                 }
-                break;
-            }
 
-            if audio_buf.len() > 0 {
-                let buf_len = if audio_buf.len() < len {
-                    audio_buf.len()
-                } else {
-                    len
-                };
-
-                let offset = decoder.dur_to_samples(stream_params.skip.take()) as i64;
-
-                if let Some(sm) = sm_ref.upgrade() {
-                    unsafe {
-                        (*sm.as_ptr())
-                            .write_copy(
-                                &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                                offset,
-                                SeekMode::Relative,
-                            )
-                            .ok();
-                    }
+                if draining && audio_buf.len() == 0 {
+                    *drained_ref.borrow_mut() = true;
                 }
-            }
+            }));
 
-            if draining && audio_buf.len() == 0 {
-                *drained.borrow_mut() = true;
-            }
-        }));
-
-        // Add callback to detect end of track
-        stream.set_underflow_callback(Some(Box::new(move || {
-            if *drained2.borrow() {
-                stream_in_r2.send(PlayerMsg::Drained).ok();
-            }
-        })));
-        (*self.mainloop).borrow_mut().unlock();
+            // Add callback to detect end of track
+            let stream_in_ref = stream_in.clone();
+            stream.set_underflow_callback(Some(Box::new(move || {
+                if *drained.borrow() {
+                    stream_in_ref.send(PlayerMsg::Drained).ok();
+                }
+            })));
+            (*self.mainloop).borrow_mut().unlock();
+        }
 
         // Connect playback stream
         if self.connect_stream(stream.clone(), device).is_err() {
@@ -346,13 +347,13 @@ impl AudioOutput {
 
         // Stream state change callback
         {
-            let ml_ref = self.mainloop.clone();
-            let sm_ref = self.context.clone();
+            let mainloop_ref = self.mainloop.clone();
+            let stream_ref = self.context.clone();
             stream.set_state_callback(Some(Box::new(move || {
-                let state = unsafe { (*sm_ref.as_ptr()).get_state() };
+                let state = unsafe { (*stream_ref.as_ptr()).get_state() };
                 match state {
                     State::Ready | State::Failed | State::Terminated => unsafe {
-                        (*ml_ref.as_ptr()).signal(false);
+                        (*mainloop_ref.as_ptr()).signal(false);
                     },
                     _ => {}
                 }

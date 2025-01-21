@@ -28,7 +28,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    fn new(cx: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
+    fn new(context: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
         let spec = Spec {
             format: match decoder.format() {
                 AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
@@ -40,7 +40,7 @@ impl Stream {
         };
 
         // Create a pulseaudio stream
-        let stream = pulse::stream::Stream::new(&mut (*cx).borrow_mut(), "Music", &spec, None)?;
+        let stream = pulse::stream::Stream::new(&mut (*context).borrow_mut(), "Music", &spec, None)?;
 
         Some(Self {
             inner: Rc::new(RefCell::new(stream)),

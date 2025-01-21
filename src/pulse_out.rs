@@ -17,7 +17,8 @@ use pulse::{
 
 use crate::{
     decode::{AudioFormat, Decoder, DecoderError},
-    PlayerMsg, StreamParams,
+    message::PlayerMsg,
+    StreamParams,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
@@ -40,7 +41,8 @@ impl Stream {
         };
 
         // Create a pulseaudio stream
-        let stream = pulse::stream::Stream::new(&mut (*context).borrow_mut(), "Music", &spec, None)?;
+        let stream =
+            pulse::stream::Stream::new(&mut (*context).borrow_mut(), "Music", &spec, None)?;
 
         Some(Self {
             inner: Rc::new(RefCell::new(stream)),
@@ -152,7 +154,9 @@ impl AudioOutput {
                 })))
         }
 
-        (*context).borrow_mut().connect(None, CxFlagSet::NOFLAGS, None)?;
+        (*context)
+            .borrow_mut()
+            .connect(None, CxFlagSet::NOFLAGS, None)?;
         (*mainloop).borrow_mut().lock();
         (*mainloop).borrow_mut().start()?;
 
@@ -210,12 +214,11 @@ impl AudioOutput {
                     stream_in.send(PlayerMsg::EndOfDecode).ok();
                 }
 
-                Err(DecoderError::Unhandled) => {
-                    warn!("Unhandled format");
-                    stream_in.send(PlayerMsg::NotSupported).ok();
-                    return;
-                }
-
+                // Err(DecoderError::Unhandled) => {
+                //     warn!("Unhandled format");
+                //     stream_in.send(PlayerMsg::NotSupported).ok();
+                //     return;
+                // }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     stream_in.send(PlayerMsg::NotSupported).ok();
@@ -239,7 +242,6 @@ impl AudioOutput {
         };
         (*self.mainloop).borrow_mut().unlock();
 
-        
         {
             let mut start_flag = true;
             let mut draining = false;
@@ -254,7 +256,16 @@ impl AudioOutput {
                 }
 
                 if start_flag {
-                    stream_in_ref.send(PlayerMsg::TrackStarted).ok();
+                    stream_in_ref
+                        .send(PlayerMsg::TrackStarted(
+                            decoder
+                                .probed
+                                .format
+                                .metadata()
+                                .skip_to_latest()
+                                .map(|md| md.clone()),
+                        ))
+                        .ok();
                     start_flag = false;
                 }
 
@@ -273,12 +284,11 @@ impl AudioOutput {
                             }
                         }
 
-                        Err(DecoderError::Unhandled) => {
-                            warn!("Unhandled format");
-                            stream_in_ref.send(PlayerMsg::NotSupported).ok();
-                            draining = true;
-                        }
-
+                        // Err(DecoderError::Unhandled) => {
+                        //     warn!("Unhandled format");
+                        //     stream_in_ref.send(PlayerMsg::NotSupported).ok();
+                        //     draining = true;
+                        // }
                         Err(DecoderError::StreamError(e)) => {
                             warn!("Error reading data stream: {}", e);
                             stream_in_ref.send(PlayerMsg::NotSupported).ok();

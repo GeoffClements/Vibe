@@ -102,19 +102,6 @@ pub struct StreamParams {
     output_threshold: Duration,
 }
 
-pub enum PlayerMsg {
-    EndOfDecode,
-    Drained,
-    Pause,
-    Unpause,
-    Connected,
-    BufferThreshold,
-    NotSupported,
-    StreamEstablished,
-    TrackStarted,
-    Decoder((decode::Decoder, StreamParams)),
-}
-
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     SimpleLogger::new()

@@ -10,7 +10,8 @@ use slimproto::proto::AutoStart;
 
 use crate::{
     decode::{Decoder, DecoderError},
-    PlayerMsg, StreamParams,
+    message::PlayerMsg,
+    StreamParams,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
@@ -68,7 +69,16 @@ impl Iterator for DecoderSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start_flag {
-            self.stream_in.send(PlayerMsg::TrackStarted).ok();
+            self.stream_in
+                .send(PlayerMsg::TrackStarted(
+                    self.decoder
+                        .probed
+                        .format
+                        .metadata()
+                        .skip_to_latest()
+                        .map(|md| md.clone()),
+                ))
+                .ok();
             self.start_flag = false;
         }
 
@@ -89,11 +99,10 @@ impl Iterator for DecoderSource {
                         }
                     }
 
-                    Err(DecoderError::Unhandled) => {
-                        warn!("Unhandled format");
-                        self.stream_in.send(PlayerMsg::NotSupported).ok();
-                    }
-
+                    // Err(DecoderError::Unhandled) => {
+                    //     warn!("Unhandled format");
+                    //     self.stream_in.send(PlayerMsg::NotSupported).ok();
+                    // }
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         self.stream_in.send(PlayerMsg::NotSupported).ok();

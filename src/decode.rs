@@ -25,12 +25,12 @@ use symphonia::core::{
     sample::{Sample, SampleFormat},
 };
 
-use crate::{PlayerMsg, StreamParams};
+use crate::{message::PlayerMsg, StreamParams};
 
 #[derive(Debug)]
 pub enum DecoderError {
     EndOfDecode,
-    Unhandled,
+    // Unhandled,
     Retry,
     StreamError(symphonia::core::errors::Error),
 }
@@ -39,7 +39,7 @@ impl std::fmt::Display for DecoderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DecoderError::EndOfDecode => write!(f, "End of decode stream"),
-            DecoderError::Unhandled => write!(f, "Unhandled format"),
+            // DecoderError::Unhandled => write!(f, "Unhandled format"),
             DecoderError::Retry => write!(f, "Decoder reset required"),
             DecoderError::StreamError(e) => write!(f, "{}", e),
         }
@@ -185,24 +185,27 @@ impl Decoder {
         &mut self,
         volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<AudioBuffer<f32>, DecoderError> {
-        let packet = self.probed.format.next_packet().map_err(|err| match err {
-            symphonia::core::errors::Error::IoError(err)
-                if err.kind() == std::io::ErrorKind::UnexpectedEof
-                    && err.to_string() == "end of stream" =>
-            {
-                DecoderError::EndOfDecode
-            }
-            symphonia::core::errors::Error::ResetRequired => {
-                self.decoder.reset();
-                DecoderError::Retry
-            }
-            error => DecoderError::StreamError(error),
-        })?;
+        let decoded = loop {
+            let packet = self.probed.format.next_packet().map_err(|err| match err {
+                symphonia::core::errors::Error::IoError(err)
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof
+                        && err.to_string() == "end of stream" =>
+                {
+                    DecoderError::EndOfDecode
+                }
+                symphonia::core::errors::Error::ResetRequired => {
+                    self.decoder.reset();
+                    DecoderError::Retry
+                }
+                error => DecoderError::StreamError(error),
+            })?;
 
-        let decoded = self
-            .decoder
-            .decode(&packet)
-            .map_err(|e| DecoderError::StreamError(e))?;
+            match self.decoder.decode(&packet) {
+                Ok(decoded) => break decoded,
+                Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
+                Err(e) => return Err(DecoderError::StreamError(e)),
+            }
+        };
 
         let vol = volume.lock().map(|v| v[0]).unwrap_or_default();
 
@@ -212,6 +215,7 @@ impl Decoder {
         Ok(audio_buffer)
     }
 
+    #[allow(unused)]
     pub fn fill_sample_buffer<T>(
         &mut self,
         buffer: &mut Vec<T>,
@@ -240,6 +244,7 @@ impl Decoder {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn fill_raw_buffer(
         &mut self,
         buffer: &mut Vec<u8>,
@@ -284,6 +289,7 @@ impl Decoder {
         buffer.extend_from_slice(raw_sample_buffer.as_bytes());
     }
 
+    #[allow(unused)]
     pub fn samples_to_dur(&self, samples: u64) -> Duration {
         Duration::from_micros(
             samples
@@ -360,7 +366,11 @@ pub fn make_decoder(
 
 fn make_connection(ip: Ipv4Addr, port: u16, http_headers: String) -> anyhow::Result<TcpStream> {
     let mut data_stream = TcpStream::connect((ip, port))?;
-    data_stream.write(http_headers.as_bytes())?;
+    let mut headers = Vec::new();
+    headers.push(http_headers.trim());
+    // headers.push("Icy-Metadata: 1");
+    data_stream.write(headers.join("\r\n").as_bytes())?;
+    data_stream.write("\r\n\r\n".as_bytes())?;
     data_stream.flush()?;
     Ok(data_stream)
 }

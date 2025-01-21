@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow;
 use crossbeam::channel::Sender;
 
-use crate::{decode::Decoder, PlayerMsg, StreamParams};
+use crate::{decode::Decoder, message::PlayerMsg, StreamParams};
 
 #[cfg(feature = "pulse")]
 use crate::pulse_out;

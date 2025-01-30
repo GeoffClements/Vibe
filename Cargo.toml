@@ -13,10 +13,13 @@ authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
 anyhow = "1.0.95"
-clap = { version = "4.5.26", features = ["derive"] }
+clap = { version = "4.5.27", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.0"
 log = "0.4.25"
+notify-rust = { version = "4.11.4", default-features = false, optional = true, features = [
+    "dbus",
+] }
 pulse = { package = "libpulse-binding", version = "2.28.2", optional = true }
 rodio = { version = "0.20.1", optional = true, default-features = false, features = [
     "crossbeam-channel",
@@ -33,6 +36,7 @@ opt-level = 3
 
 [features]
 default = ["pulse"]
+notify = ["dep:notify-rust"]
 pulse = ["dep:pulse"]
 rodio = ["dep:rodio"]
 

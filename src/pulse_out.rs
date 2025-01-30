@@ -256,22 +256,7 @@ impl AudioOutput {
                 }
 
                 if start_flag {
-                    let md = decoder
-                        .probed
-                        .format
-                        .metadata()
-                        .current()
-                        .cloned()
-                        .or_else(|| {
-                            decoder
-                                .probed
-                                .metadata
-                                .get()
-                                .as_ref()
-                                .and_then(|m| m.current().cloned())
-                        });
-
-                    stream_in_ref.send(PlayerMsg::TrackStarted(md)).ok();
+                    stream_in_ref.send(PlayerMsg::TrackStarted).ok();
                     start_flag = false;
                 }
 

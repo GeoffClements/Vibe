@@ -69,23 +69,7 @@ impl Iterator for DecoderSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start_flag {
-            let md = self
-                .decoder
-                .probed
-                .format
-                .metadata()
-                .current()
-                .cloned()
-                .or_else(|| {
-                    self.decoder
-                        .probed
-                        .metadata
-                        .get()
-                        .as_ref()
-                        .and_then(|m| m.current().cloned())
-                });
-
-            self.stream_in.send(PlayerMsg::TrackStarted(md)).ok();
+            self.stream_in.send(PlayerMsg::TrackStarted).ok();
             self.start_flag = false;
         }
 

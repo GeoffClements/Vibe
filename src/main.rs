@@ -26,6 +26,8 @@ use slimproto::{
 mod audio_out;
 mod decode;
 mod message;
+#[cfg(feature = "notify")]
+mod notify;
 mod proto;
 #[cfg(feature = "pulse")]
 mod pulse_out;
@@ -75,6 +77,10 @@ struct Cli {
         help = "Which audio system to use (only rodio is available)"
     )]
     system: String,
+
+    #[cfg(feature = "notify")]
+    #[arg(long, short = 'q', help = "Do not use desktop notifications")]
+    quiet: bool,
 
     #[arg(long,
         default_value = "off",
@@ -192,6 +198,8 @@ fn main() -> anyhow::Result<()> {
                         &mut output,
                         stream_in.clone(),
                         &cli.device,
+                        #[cfg(feature = "notify")]
+                        &cli.quiet,
                     );
                 }
                 _ => {}

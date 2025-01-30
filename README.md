@@ -78,6 +78,7 @@ the ALSA development files. These are provided as part of the `libasound2-dev`
 package on Debian and Ubuntu distributions and `alsa-lib-devel` on Fedora.
 
 ### Features
+#### Symphonia optimization
 Symphonia has optimization features that are off by default, you can switch them on 
 with `--features symphonia/<optimization>`. These features are:
  - `opt-simd-sse`
@@ -88,6 +89,7 @@ or you can switch them all on with `opt-simd`.
 
 If the Symphonia devs have them off by default then so will I.
 
+#### Rodio
 To use `rodio`/`cpal`, use the `rodio` feature. This will add the 
 ability to use `--system=rodio` on the command line to select the 
 rodio output. Note that when
@@ -100,6 +102,9 @@ on `pulseaudo`.
 If you want to compile without having a dependency on pulseaudio then use
 the `--no-default-features` compilation option. In this case, the rodio
 feature flag must be selected, otherwise Vibe will not compile.
+
+#### Notify
+Todo: libdbus-1-dev pkg-config
 
 ## Dependencies
 Vibe has zero run-time dependencies, all the stream

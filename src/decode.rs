@@ -20,7 +20,7 @@ use symphonia::core::{
     conv::FromSample,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
-    meta::MetadataOptions,
+    meta::{MetadataOptions, MetadataRevision},
     probe::{Hint, ProbeResult},
     sample::{Sample, SampleFormat},
 };
@@ -287,6 +287,22 @@ impl Decoder {
             RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
         raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
         buffer.extend_from_slice(raw_sample_buffer.as_bytes());
+    }
+
+    #[cfg(feature = "notify")]
+    pub fn metadata(&mut self) -> Option<MetadataRevision> {
+        self.probed
+            .format
+            .metadata()
+            .current()
+            .cloned()
+            .or_else(|| {
+                self.probed
+                    .metadata
+                    .get()
+                    .as_ref()
+                    .and_then(|m| m.current().cloned())
+            })
     }
 
     #[allow(unused)]

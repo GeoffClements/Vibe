@@ -1,6 +1,7 @@
 {
     "rust-analyzer.cargo.features": [
         "symphonia/opt-simd",
-        "rodio"
+        "rodio",
+        "notify"
     ],
 }

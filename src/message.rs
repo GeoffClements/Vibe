@@ -10,9 +10,8 @@ use slimproto::{
     status::{StatusCode, StatusData},
     ClientMessage, ServerMessage,
 };
-use symphonia::core::meta::{MetadataRevision, StandardTagKey};
 
-use crate::{audio_out::AudioOutput, decode, StreamParams};
+use crate::{audio_out::AudioOutput, decode, notify::notify, StreamParams};
 
 #[allow(unused)]
 pub enum PlayerMsg {
@@ -24,7 +23,7 @@ pub enum PlayerMsg {
     BufferThreshold,
     NotSupported,
     StreamEstablished,
-    TrackStarted(Option<MetadataRevision>),
+    TrackStarted,
     Decoder((decode::Decoder, StreamParams)),
 }
 
@@ -233,6 +232,8 @@ pub fn process_stream_msg(
     output: &mut AudioOutput,
     stream_in: Sender<PlayerMsg>,
     device: &Option<String>,
+    #[cfg(feature = "notify")]
+    quiet: &bool,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
@@ -296,7 +297,7 @@ pub fn process_stream_msg(
             }
         }
 
-        PlayerMsg::TrackStarted(metadata) => {
+        PlayerMsg::TrackStarted => {
             info!("Sending track started");
             if let Ok(mut status) = status.lock() {
                 status.set_elapsed_milli_seconds(0);
@@ -305,59 +306,65 @@ pub fn process_stream_msg(
                 slim_tx_in.send(msg).ok();
             }
 
-            if let Some(md) = metadata {
-                let artist = {
-                    let artist = md
-                        .tags()
-                        .to_vec()
-                        .iter()
-                        .find(|t| t.std_key == Some(StandardTagKey::AlbumArtist))
-                        .map(|t| match &t.value {
-                            symphonia::core::meta::Value::String(s) => s.to_owned(),
-                            _ => "{unknown}".to_owned(),
-                        });
+            // if let Some(md) = metadata {
+            //     let artist = {
+            //         let artist = md
+            //             .tags()
+            //             .to_vec()
+            //             .iter()
+            //             .find(|t| t.std_key == Some(StandardTagKey::AlbumArtist))
+            //             .map(|t| match &t.value {
+            //                 symphonia::core::meta::Value::String(s) => s.to_owned(),
+            //                 _ => "{unknown}".to_owned(),
+            //             });
 
-                    if artist.is_none() {
-                        md.tags()
-                            .to_vec()
-                            .iter()
-                            .find(|t| t.std_key == Some(StandardTagKey::Artist))
-                            .map(|t| match &t.value {
-                                symphonia::core::meta::Value::String(s) => s.to_owned(),
-                                _ => "{unknown}".to_owned(),
-                            })
-                    } else {
-                        artist
-                    }
-                };
+            //         if artist.is_none() {
+            //             md.tags()
+            //                 .to_vec()
+            //                 .iter()
+            //                 .find(|t| t.std_key == Some(StandardTagKey::Artist))
+            //                 .map(|t| match &t.value {
+            //                     symphonia::core::meta::Value::String(s) => s.to_owned(),
+            //                     _ => "{unknown}".to_owned(),
+            //                 })
+            //         } else {
+            //             artist
+            //         }
+            //     };
 
-                let track = md
-                    .tags()
-                    .to_vec()
-                    .iter()
-                    .find(|t| t.std_key == Some(StandardTagKey::TrackTitle))
-                    .map(|t| match &t.value {
-                        symphonia::core::meta::Value::String(s) => s.to_owned(),
-                        _ => "{unknown}".to_owned(),
-                    });
+            //     let track = md
+            //         .tags()
+            //         .to_vec()
+            //         .iter()
+            //         .find(|t| t.std_key == Some(StandardTagKey::TrackTitle))
+            //         .map(|t| match &t.value {
+            //             symphonia::core::meta::Value::String(s) => s.to_owned(),
+            //             _ => "{unknown}".to_owned(),
+            //         });
 
-                let album = md
-                    .tags()
-                    .to_vec()
-                    .iter()
-                    .find(|t| t.std_key == Some(StandardTagKey::Album))
-                    .map(|t| match &t.value {
-                        symphonia::core::meta::Value::String(s) => s.to_owned(),
-                        _ => "{unknown}".to_owned(),
-                    });
+            //     let album = md
+            //         .tags()
+            //         .to_vec()
+            //         .iter()
+            //         .find(|t| t.std_key == Some(StandardTagKey::Album))
+            //         .map(|t| match &t.value {
+            //             symphonia::core::meta::Value::String(s) => s.to_owned(),
+            //             _ => "{unknown}".to_owned(),
+            //         });
 
-                if let (Some(track), Some(album), Some(artist)) = (track, album, artist) {
-                    info!("Playing {} by {} from {}", track, artist, album);
-                }
-            }
+            //     if let (Some(track), Some(album), Some(artist)) = (track, album, artist) {
+            //         info!("Playing {} by {} from {}", track, artist, album);
+            //     }
+            // }
         }
 
-        PlayerMsg::Decoder((decoder, stream_params)) => {
+        PlayerMsg::Decoder((mut decoder, stream_params)) => {
+            #[cfg(feature = "notify")]
+            if let Some(metadata) = decoder.metadata() {
+                if !quiet {
+                    notify(metadata);
+                }
+            }
             output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
         }
     }

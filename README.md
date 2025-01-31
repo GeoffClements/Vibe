@@ -104,9 +104,15 @@ the `--no-default-features` compilation option. In this case, the rodio
 feature flag must be selected, otherwise Vibe will not compile.
 
 #### Notify
-Todo: libdbus-1-dev pkg-config
+To enable new track notifications on the desktop use the `notify`
+feature. If this is enabled, you will be able to suppress the
+notifications with the `--quiet` command option.
 
-## Dependencies
+To compile when this feature is selected, `pkg-config` must be
+installed along with the dbus development package; this is
+`libdbus-1-dev` on Debian and Ubuntu.
+
+## Run-time Dependencies
 Vibe has zero run-time dependencies, all the stream
 demultiplexing and decoding is done natively thanks to 
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their

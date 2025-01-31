@@ -20,10 +20,13 @@ use symphonia::core::{
     conv::FromSample,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
-    meta::{MetadataOptions, MetadataRevision},
+    meta::MetadataOptions,
     probe::{Hint, ProbeResult},
     sample::{Sample, SampleFormat},
 };
+
+#[cfg(feature = "notify")]
+use symphonia::core::meta::MetadataRevision;
 
 use crate::{message::PlayerMsg, StreamParams};
 

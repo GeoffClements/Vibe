@@ -11,7 +11,9 @@ use slimproto::{
     ClientMessage, ServerMessage,
 };
 
-use crate::{audio_out::AudioOutput, decode, notify::notify, StreamParams};
+#[cfg(feature = "notify")]
+use crate::notify::notify;
+use crate::{audio_out::AudioOutput, decode, StreamParams};
 
 #[allow(unused)]
 pub enum PlayerMsg {
@@ -232,8 +234,7 @@ pub fn process_stream_msg(
     output: &mut AudioOutput,
     stream_in: Sender<PlayerMsg>,
     device: &Option<String>,
-    #[cfg(feature = "notify")]
-    quiet: &bool,
+    #[cfg(feature = "notify")] quiet: &bool,
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
@@ -358,6 +359,7 @@ pub fn process_stream_msg(
             // }
         }
 
+        #[allow(unused_mut)]
         PlayerMsg::Decoder((mut decoder, stream_params)) => {
             #[cfg(feature = "notify")]
             if let Some(metadata) = decoder.metadata() {

@@ -306,57 +306,6 @@ pub fn process_stream_msg(
                 let msg = status.make_status_message(StatusCode::TrackStarted);
                 slim_tx_in.send(msg).ok();
             }
-
-            // if let Some(md) = metadata {
-            //     let artist = {
-            //         let artist = md
-            //             .tags()
-            //             .to_vec()
-            //             .iter()
-            //             .find(|t| t.std_key == Some(StandardTagKey::AlbumArtist))
-            //             .map(|t| match &t.value {
-            //                 symphonia::core::meta::Value::String(s) => s.to_owned(),
-            //                 _ => "{unknown}".to_owned(),
-            //             });
-
-            //         if artist.is_none() {
-            //             md.tags()
-            //                 .to_vec()
-            //                 .iter()
-            //                 .find(|t| t.std_key == Some(StandardTagKey::Artist))
-            //                 .map(|t| match &t.value {
-            //                     symphonia::core::meta::Value::String(s) => s.to_owned(),
-            //                     _ => "{unknown}".to_owned(),
-            //                 })
-            //         } else {
-            //             artist
-            //         }
-            //     };
-
-            //     let track = md
-            //         .tags()
-            //         .to_vec()
-            //         .iter()
-            //         .find(|t| t.std_key == Some(StandardTagKey::TrackTitle))
-            //         .map(|t| match &t.value {
-            //             symphonia::core::meta::Value::String(s) => s.to_owned(),
-            //             _ => "{unknown}".to_owned(),
-            //         });
-
-            //     let album = md
-            //         .tags()
-            //         .to_vec()
-            //         .iter()
-            //         .find(|t| t.std_key == Some(StandardTagKey::Album))
-            //         .map(|t| match &t.value {
-            //             symphonia::core::meta::Value::String(s) => s.to_owned(),
-            //             _ => "{unknown}".to_owned(),
-            //         });
-
-            //     if let (Some(track), Some(album), Some(artist)) = (track, album, artist) {
-            //         info!("Playing {} by {} from {}", track, artist, album);
-            //     }
-            // }
         }
 
         #[allow(unused_mut)]

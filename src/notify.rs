@@ -50,6 +50,7 @@ pub fn notify(metadata: MetadataRevision) {
             Notification::new()
                 .summary("Now playing")
                 .body(&notification)
+                .icon("emblem-music-symbolic")
                 .timeout(6000)
                 .show()
                 .ok();

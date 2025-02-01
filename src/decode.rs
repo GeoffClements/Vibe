@@ -7,23 +7,34 @@ use std::{
 };
 
 use anyhow::{bail, Context};
+#[cfg(not(feature = "pulse"))]
+use crossbeam::channel::Sender;
+#[cfg(feature = "pulse")]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
+
 use log::warn;
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
     status::StatusData,
 };
+
 use symphonia::core::{
-    audio::{AudioBuffer, RawSample, RawSampleBuffer, SampleBuffer, Signal},
+    audio::{AudioBuffer, Signal},
     codecs::{Decoder as SymDecoder, DecoderOptions},
     conv::FromSample,
     formats::FormatOptions,
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
     probe::{Hint, ProbeResult},
-    sample::{Sample, SampleFormat},
+    sample::SampleFormat,
 };
+
+#[cfg(feature = "pulse")]
+use symphonia::core::audio::{RawSample, RawSampleBuffer};
+
+#[cfg(feature = "rodio")]
+use symphonia::core::{audio::SampleBuffer, sample::Sample};
 
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
@@ -180,6 +191,7 @@ impl Decoder {
         self.spec.sample_rate
     }
 
+    #[cfg(feature = "pulse")]
     pub fn format(&self) -> AudioFormat {
         self.spec.format
     }
@@ -218,7 +230,7 @@ impl Decoder {
         Ok(audio_buffer)
     }
 
-    #[allow(unused)]
+    #[cfg(feature = "rodio")]
     pub fn fill_sample_buffer<T>(
         &mut self,
         buffer: &mut Vec<T>,
@@ -247,7 +259,7 @@ impl Decoder {
         Ok(())
     }
 
-    #[allow(unused)]
+    #[cfg(feature = "pulse")]
     pub fn fill_raw_buffer(
         &mut self,
         buffer: &mut Vec<u8>,
@@ -282,6 +294,7 @@ impl Decoder {
         Ok(())
     }
 
+    #[cfg(feature = "pulse")]
     fn audio_to_raw<T>(&self, audio_buffer: AudioBuffer<f32>, buffer: &mut Vec<u8>)
     where
         T: RawSample + FromSample<f32>,
@@ -308,16 +321,15 @@ impl Decoder {
             })
     }
 
-    #[allow(unused)]
-    pub fn samples_to_dur(&self, samples: u64) -> Duration {
-        Duration::from_micros(
-            samples
-                * self.spec.sample_rate as u64
-                * self.spec.channels as u64
-                * self.spec.format.size_of() as u64
-                * 1_000_000,
-        )
-    }
+    // pub fn samples_to_dur(&self, samples: u64) -> Duration {
+    //     Duration::from_micros(
+    //         samples
+    //             * self.spec.sample_rate as u64
+    //             * self.spec.channels as u64
+    //             * self.spec.format.size_of() as u64
+    //             * 1_000_000,
+    //     )
+    // }
 
     pub fn dur_to_samples(&self, dur: Duration) -> u64 {
         self.spec.sample_rate as u64
@@ -341,7 +353,7 @@ pub fn make_decoder(
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
-    skip: Arc<AtomicCell<Duration>>,
+    #[cfg(feature = "pulse")] skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 ) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
@@ -377,6 +389,7 @@ pub fn make_decoder(
         StreamParams {
             autostart,
             volume,
+            #[cfg(feature = "pulse")]
             skip,
             output_threshold,
         },

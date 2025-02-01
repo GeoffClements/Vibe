@@ -18,8 +18,10 @@ pub enum AudioOutput {
 }
 
 impl AudioOutput {
-    #[allow(unused)]
-    pub fn try_new(system: &str, device: &Option<String>) -> anyhow::Result<Self> {
+    pub fn try_new(
+        system: &str,
+        #[cfg(feature = "rodio")] device: &Option<String>,
+    ) -> anyhow::Result<Self> {
         Ok(match system {
             #[cfg(feature = "pulse")]
             "pulse" => Self::Pulse(pulse_out::AudioOutput::try_new()?),

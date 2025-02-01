@@ -203,6 +203,7 @@ pub fn process_slim_msg(
                             pcmchannels,
                             autostart,
                             volume.clone(),
+                            #[cfg(feature = "pulse")]
                             skip.clone(),
                             output_threshold,
                         ) {
@@ -308,9 +309,13 @@ pub fn process_stream_msg(
             }
         }
 
-        #[allow(unused_mut)]
+        #[cfg(not(feature = "notify"))]
+        PlayerMsg::Decoder((decoder, stream_params)) => {
+            output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+        }
+
+        #[cfg(feature = "notify")]
         PlayerMsg::Decoder((mut decoder, stream_params)) => {
-            #[cfg(feature = "notify")]
             if let Some(metadata) = decoder.metadata() {
                 if !quiet {
                     notify(metadata);

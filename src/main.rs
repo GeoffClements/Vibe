@@ -57,24 +57,10 @@ struct Cli {
     #[arg(short, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
-    #[cfg(all(feature = "pulse", not(feature = "rodio")))]
-    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new([
-        "pulse"]),
-        help = "Which audio system to use (only pulse is available)"
-    )]
-    system: String,
-
     #[cfg(all(feature = "pulse", feature = "rodio"))]
     #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new([
         "pulse", "rodio" ]),
         help = "Which audio system to use"
-    )]
-    system: String,
-
-    #[cfg(all(not(feature = "pulse"), feature = "rodio"))]
-    #[arg(long, short = 'a', default_value = "rodio", value_parser = PossibleValuesParser::new([
-        "rodio" ]),
-        help = "Which audio system to use (only rodio is available)"
     )]
     system: String,
 
@@ -100,10 +86,10 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
     }
 }
 
-#[allow(unused)]
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
+    #[cfg(feature = "pulse")]
     skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 }
@@ -115,7 +101,17 @@ fn main() -> anyhow::Result<()> {
         .with_level(cli.loglevel)
         .init()?;
 
-    let mut output = AudioOutput::try_new(&cli.system, &cli.device)?;
+    #[cfg(all(feature = "pulse", feature = "rodio"))]
+    let output_system = cli.system.as_str();
+    #[cfg(all(feature = "pulse", not(feature = "rodio")))]
+    let output_system = "pulse";
+    #[cfg(all(not(feature = "pulse"), feature = "rodio"))]
+    let output_system = "rodio";
+    let mut output = AudioOutput::try_new(
+        output_system,
+        #[cfg(feature = "rodio")]
+        &cli.device,
+    )?;
 
     // List the output devices and terminate
     if cli.list {

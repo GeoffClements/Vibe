@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{collections::VecDeque, time::Duration};
 
 use anyhow::{self, bail, Context};
-use crossbeam::{atomic::AtomicCell, channel::Sender};
+use crossbeam::channel::Sender;
 use log::warn;
 use rodio::{
     cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamHandle, Sink, Source,
@@ -90,10 +90,6 @@ impl Iterator for DecoderSource {
                         }
                     }
 
-                    // Err(DecoderError::Unhandled) => {
-                    //     warn!("Unhandled format");
-                    //     self.stream_in.send(PlayerMsg::NotSupported).ok();
-                    // }
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         self.stream_in.send(PlayerMsg::NotSupported).ok();
@@ -149,16 +145,6 @@ impl Stream {
 
     fn stop(&self) {
         self.sink.stop();
-    }
-
-    fn seek(&self, pos: Duration) {
-        self.sink
-            .try_seek(pos)
-            .map_err(|e| {
-                warn!("Seek error {e}");
-                e
-            })
-            .ok();
     }
 }
 
@@ -252,14 +238,6 @@ impl AudioOutput {
         match self.playing {
             Some(ref stream) => stream.sink.get_pos(),
             None => Duration::ZERO,
-        }
-    }
-
-    #[allow(unused)]
-    pub fn skip(&self, skip: Arc<AtomicCell<Duration>>) {
-        let skip = skip.take();
-        if let Some(ref stream) = self.playing {
-            stream.seek(skip);
         }
     }
 

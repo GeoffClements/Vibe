@@ -118,6 +118,10 @@ demultiplexing and decoding is done natively thanks to
 [Symphonia][`symphonia`], a big "thank-you" to the Symphonia devs for their
 amazing work!
 
+## Support me
+Vibe runs on coffee!
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V719WYF6)
+
 
 [`slimtcp`]: https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol
 [`lms`]: https://lyrion.org/

@@ -33,11 +33,10 @@ pub fn notify(metadata: MetadataRevision) {
                             .split(&['-', '/'])
                             .filter(|s| s.len() == 4)
                             .map(|s| s.to_string())
-                            // .take(1)
                             .collect();
 
-                        if year.len() > 0 {
-                            tags.insert("year", Value::String(year[year.len() - 1].to_owned()));
+                        if let [.., last] = &year[..] {
+                            tags.insert("year", Value::String(last.to_owned()));
                         }
                     }
 

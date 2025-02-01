@@ -103,7 +103,7 @@ if `--system=rodio` is not specified.
 
 When the `rodio` feature is selected, Vibe will compile for
 both pulseaudio and rodio so will still have a dependency
-on `pulseaudo`.
+on `pulseaudio`.
 If you want to compile without having a dependency on pulseaudio then use
 the `--no-default-features` compilation option. In this case, the rodio
 feature flag must be selected, otherwise Vibe will not compile.

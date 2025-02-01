@@ -134,7 +134,7 @@ impl Decoder {
                 &FormatOptions::default(),
                 &MetadataOptions::default(),
             )
-            .context("Unrecognised container format")?;
+            .context("Unrecognized container format")?;
 
         let track = match probed.format.default_track() {
             Some(track) => track,

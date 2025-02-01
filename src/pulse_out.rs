@@ -195,11 +195,11 @@ impl AudioOutput {
     ) {
         // Create an audio buffer to hold raw u8 samples
         let buf_size = {
-            let num_samps = decoder.dur_to_samples(stream_params.output_threshold) as usize;
-            if num_samps < MIN_AUDIO_BUFFER_SIZE {
+            let num_samples = decoder.dur_to_samples(stream_params.output_threshold) as usize;
+            if num_samples < MIN_AUDIO_BUFFER_SIZE {
                 MIN_AUDIO_BUFFER_SIZE
             } else {
-                num_samps
+                num_samples
             }
         };
 
@@ -479,7 +479,7 @@ impl AudioOutput {
         let _op = (*self.context)
             .borrow_mut()
             .introspect()
-            .get_sink_info_list(move |listresult| match listresult {
+            .get_sink_info_list(move |list_result| match list_result {
                 ListResult::Item(item) => {
                     let name = item.name.to_owned().unwrap_or_default().to_string();
                     let description = item.description.to_owned().map(|n| n.to_string());

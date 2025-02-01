@@ -26,15 +26,19 @@ pub fn notify(metadata: MetadataRevision) {
                     }
 
                     Some(StandardTagKey::Date) => {
-                        let year: String = tag
+                        let year: Vec<String> = tag
                             .value
                             .to_string()
                             .as_str()
-                            .split("-")
+                            .split(&['-', '/'])
                             .filter(|s| s.len() == 4)
-                            .take(1)
+                            .map(|s| s.to_string())
+                            // .take(1)
                             .collect();
-                        tags.insert("year", Value::String(year));
+
+                        if year.len() > 0 {
+                            tags.insert("year", Value::String(year[year.len() - 1].to_owned()));
+                        }
                     }
 
                     _ => {}

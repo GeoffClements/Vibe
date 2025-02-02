@@ -35,7 +35,7 @@ jobs:
 
     - name: Build with feature(s)
       run: |
-        if [ "${{ matrix.no_default_features }}" = true and ne("${{ matrix.feature }}", "")  and ne("${{ matrix.feature }}", "notify") ]; then
+        if [ "${{ matrix.no_default_features }}" = true and ne("${{ matrix.feature }}", "") and ne("${{ matrix.feature }}", "notify") ]; then
           cargo build --no-default-features --features "${{ matrix.feature }}"
         else
           cargo build --features "${{ matrix.feature }}"

@@ -24,11 +24,11 @@ jobs:
         no-default:
           - false
           - true
-      exclude:
-        - no-default: true
-          features: ""
-        - no-default: true
-          features: "notify"
+        exclude:
+          - no-default: true
+            features: ""
+          - no-default: true
+            features: "notify"
 
     steps:
       - name: Checkout repository

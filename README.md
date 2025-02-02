@@ -1,6 +1,6 @@
 ![Static Badge](https://img.shields.io/badge/Written%20in-Rust-blue?style=flat&logo=rust)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![push workflow](https://github.com/GeoffClements/Vibe/actions/workflows/feature_build.yml/badge.svg?event=push)
+![push workflow](https://github.com/GeoffClements/Vibe/actions/workflows/feature_build.yml/badge.svg)
 ![Static Badge](https://img.shields.io/badge/Feel%20the-Vibe-red?style=plastic)
 
 

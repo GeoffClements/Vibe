@@ -49,18 +49,18 @@ pub fn notify(metadata: MetadataRevision) {
         let mut notification = String::new();
         if let Some(track) = notify_tags.get("track") {
             notification.push_str(format!("<b>{}</b>", track).as_str());
-        }
+            
+            if let Some(artist) = notify_tags.get("artist") {
+                notification.push_str(format!(" by <b>{}</b>", artist).as_str());
+            }
 
-        if let Some(artist) = notify_tags.get("artist") {
-            notification.push_str(format!(" by <b>{}</b>", artist).as_str());
-        }
+            if let Some(album) = notify_tags.get("album") {
+                notification.push_str(format!(" from <b>{}</b>", album).as_str());
+            }
 
-        if let Some(album) = notify_tags.get("album") {
-            notification.push_str(format!(" from <b>{}</b>", album).as_str());
-        }
-
-        if let Some(date) = notify_tags.get("year") {
-            notification.push_str(format!(" ({})", date).as_str());
+            if let Some(date) = notify_tags.get("year") {
+                notification.push_str(format!(" ({})", date).as_str());
+            }
         }
 
         if notification.len() > 0 {

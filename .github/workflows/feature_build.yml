@@ -1,42 +1,49 @@
-name: Feature_Build
+name: Build Vibe
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: false
       matrix:
-        feature:
+        features:
           - ""
-          - "notify"
+          - "pulse"
           - "rodio"
-          - "notify,rodio"
-        no_default_features:
-          - true
+          - "notify"
+          - "pulse,rodio"
+          - "pulse,notify"
+          - "rodio,notify"
+          - "pulse,rodio,notify"
+        no-default:
           - false
+          - true
+      exclude:
+        - no-default: true
+          features: ""
+        - no-default: true
+          features: "notify"
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libpulse-dev libasound2-dev libdbus-1-dev
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libpulse-dev libasound2-dev libdbus-1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Build with feature(s)
-      run: |
-        if [ "${{ matrix.no_default_features }}" = true and ne("${{ matrix.feature }}", "") and ne("${{ matrix.feature }}", "notify") ]; then
-          cargo build --no-default-features --features "${{ matrix.feature }}"
-        else
-          cargo build --features "${{ matrix.feature }}"
-        fi
+      - name: Build with features
+        run: |
+          if [ "${{ matrix.no-default }}" == "true" ]; then
+            cargo build --no-default-features --features "${{ matrix.features }}"
+          else
+            cargo build --features "${{ matrix.features }}"
+          fi

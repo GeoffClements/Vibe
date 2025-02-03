@@ -54,6 +54,7 @@ assets = [
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"
+extended-description = "A music player for the Lyrion Music Server"
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"

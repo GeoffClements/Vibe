@@ -34,13 +34,13 @@ vibe -l
 There is a systemd service file in the resources directory
 which you can adapt to your needs as follows:
 
-Once compiled, move the `vibe` executable to where you want on your
-system then edit the `vibe_daemon.service` file so that the
-`ExecStart=` line points to it, then add options you want, if any, to the 
-vibe command.
+Copy the systemd service file to `~/.config/systemd/user/`.
+If you installed via the deb package you can leave this 
+file unchanged. If you compiled Vibe yourself then you will
+need to edit the line beginning with `ExecStart=` so that it 
+points to the `vibe` executable.
 
-Copy the systemd service file to `~/.config/systemd/user/` and then
-tell systemd of the new service with
+Tell systemd of the new service with
 ```bash
 systemctl --user daemon-reload
 ```

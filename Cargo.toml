@@ -1,6 +1,6 @@
 [package]
 name = "Vibe_Player"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "A music player for the Lyrion Music Server"
 license = "MIT"
@@ -43,3 +43,20 @@ rodio = ["dep:rodio"]
 [[bin]]
 name = "vibe"
 path = "src/main.rs"
+
+[package.metadata.deb]
+maintainer = "Geoff Clements <ro2kz0@gmail.com>>"
+depends = "libc6 (>= 2.17), libpulse0, libdbus-1-3"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/vibe", "/usr/bin/", "755"]
+]
+features = ["notify"]
+maintainer-scripts = "debian/"
+
+# [package.metadata.deb.systemd-units]
+# unit-scripts = "resources/"
+# unit-name = "vibe"
+# enable = false
+# start = false

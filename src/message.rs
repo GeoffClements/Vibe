@@ -93,15 +93,16 @@ pub fn process_slim_msg(
             info!("Stop playback received");
             if let Some(output) = output {
                 output.stop();
-                if let Ok(mut status) = status.lock() {
-                    status.set_elapsed_milli_seconds(0);
-                    status.set_elapsed_seconds(0);
-                    status.set_output_buffer_size(0);
-                    status.set_output_buffer_fullness(0);
-                    info!("Player flushed");
-                    let msg = status.make_status_message(StatusCode::Flushed);
-                    slim_tx_in.send(msg).ok();
-                }
+            }
+
+            if let Ok(mut status) = status.lock() {
+                status.set_elapsed_milli_seconds(0);
+                status.set_elapsed_seconds(0);
+                status.set_output_buffer_size(0);
+                status.set_output_buffer_fullness(0);
+                info!("Player flushed");
+                let msg = status.make_status_message(StatusCode::Flushed);
+                slim_tx_in.send(msg).ok();
             }
         }
 
@@ -109,15 +110,16 @@ pub fn process_slim_msg(
             info!("Flushing");
             if let Some(output) = output {
                 output.flush();
-                if let Ok(mut status) = status.lock() {
-                    status.set_elapsed_milli_seconds(0);
-                    status.set_elapsed_seconds(0);
-                    status.set_output_buffer_size(0);
-                    status.set_output_buffer_fullness(0);
-                    info!("Player flushed");
-                    let msg = status.make_status_message(StatusCode::Flushed);
-                    slim_tx_in.send(msg).ok();
-                }
+            }
+
+            if let Ok(mut status) = status.lock() {
+                status.set_elapsed_milli_seconds(0);
+                status.set_elapsed_seconds(0);
+                status.set_output_buffer_size(0);
+                status.set_output_buffer_fullness(0);
+                info!("Player flushed");
+                let msg = status.make_status_message(StatusCode::Flushed);
+                slim_tx_in.send(msg).ok();
             }
         }
 
@@ -361,6 +363,7 @@ pub fn process_stream_msg(
                     notify(metadata);
                 }
             }
+            
             if let Some(output) = output {
                 output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
             }

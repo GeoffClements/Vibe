@@ -75,17 +75,19 @@ pub fn process_slim_msg(
 
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
-            if let Some(output) = output {
-                let dur = output.get_dur();
-                if let Ok(mut status) = status.lock() {
-                    // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
-                    status.set_elapsed_milli_seconds(dur.as_millis() as u32);
-                    status.set_elapsed_seconds(dur.as_secs() as u32);
-                    status.set_timestamp(ts);
+            let dur = match output {
+                Some(output) => output.get_dur(),
+                None => Duration::ZERO,
+            };
 
-                    let msg = status.make_status_message(StatusCode::Timer);
-                    slim_tx_in.send(msg).ok();
-                }
+            if let Ok(mut status) = status.lock() {
+                // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
+                status.set_elapsed_milli_seconds(dur.as_millis() as u32);
+                status.set_elapsed_seconds(dur.as_secs() as u32);
+                status.set_timestamp(ts);
+
+                let msg = status.make_status_message(StatusCode::Timer);
+                slim_tx_in.send(msg).ok();
             }
         }
 
@@ -363,7 +365,7 @@ pub fn process_stream_msg(
                     notify(metadata);
                 }
             }
-            
+
             if let Some(output) = output {
                 output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
             }

@@ -107,31 +107,33 @@ fn main() -> anyhow::Result<()> {
     let output_system = "pulse";
     #[cfg(all(not(feature = "pulse"), feature = "rodio"))]
     let output_system = "rodio";
-    let mut output = AudioOutput::try_new(
-        output_system,
-        #[cfg(feature = "rodio")]
-        &cli.device,
-    )?;
+    let mut output = None;
 
     // List the output devices and terminate
     if cli.list {
-        println!("Output devices:");
-        let names = output.get_output_device_names()?;
-        names
-            .iter()
-            .enumerate()
-            .for_each(|(i, (name, description))| {
-                println!("{}: {}", i, name);
-                if let Some(desc) = description {
-                    println!("   {}", desc);
-                }
-            });
-        print!("Found {} device", names.len());
-        if names.len() != 1 {
-            print!("s");
+        if let Ok(output) = AudioOutput::try_new(
+            output_system,
+            #[cfg(feature = "rodio")]
+            &cli.device,
+        ) {
+            println!("Output devices:");
+            let names = output.get_output_device_names()?;
+            names
+                .iter()
+                .enumerate()
+                .for_each(|(i, (name, description))| {
+                    println!("{}: {}", i, name);
+                    if let Some(desc) = description {
+                        println!("   {}", desc);
+                    }
+                });
+            print!("Found {} device", names.len());
+            if names.len() != 1 {
+                print!("s");
+            }
+            println!();
+            return Ok(());
         }
-        println!();
-        return Ok(());
     }
 
     loop {
@@ -177,11 +179,16 @@ fn main() -> anyhow::Result<()> {
                         stream_in.clone(),
                         skip.clone(),
                         &start_time,
+                        output_system,
+                        #[cfg(feature = "rodio")]
+                        &cli.device,
                     )?,
                     None => {
                         info!("Lost contact with server, resetting");
                         slim_tx_in.send(ClientMessage::Bye(1)).ok();
-                        output.stop();
+                        if let Some(ref mut output) = output {
+                            output.stop();
+                        }
                         break;
                     }
                 },

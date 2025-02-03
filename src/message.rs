@@ -30,7 +30,7 @@ pub enum PlayerMsg {
 }
 
 pub fn process_slim_msg(
-    output: &mut AudioOutput,
+    output: &mut Option<AudioOutput>,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
@@ -40,6 +40,8 @@ pub fn process_slim_msg(
     stream_in: Sender<PlayerMsg>,
     skip: Arc<AtomicCell<Duration>>,
     start_time: &Instant,
+    output_system: &str,
+    #[cfg(feature = "rodio")] device: &Option<String>,
 ) -> anyhow::Result<()> {
     // println!("{:?}", msg);
     match msg {
@@ -73,62 +75,70 @@ pub fn process_slim_msg(
 
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
-            let dur = output.get_dur();
-            if let Ok(mut status) = status.lock() {
-                // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
-                status.set_elapsed_milli_seconds(dur.as_millis() as u32);
-                status.set_elapsed_seconds(dur.as_secs() as u32);
-                status.set_timestamp(ts);
+            if let Some(output) = output {
+                let dur = output.get_dur();
+                if let Ok(mut status) = status.lock() {
+                    // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
+                    status.set_elapsed_milli_seconds(dur.as_millis() as u32);
+                    status.set_elapsed_seconds(dur.as_secs() as u32);
+                    status.set_timestamp(ts);
 
-                let msg = status.make_status_message(StatusCode::Timer);
-                slim_tx_in.send(msg).ok();
+                    let msg = status.make_status_message(StatusCode::Timer);
+                    slim_tx_in.send(msg).ok();
+                }
             }
         }
 
         ServerMessage::Stop => {
             info!("Stop playback received");
-            output.stop();
-            if let Ok(mut status) = status.lock() {
-                status.set_elapsed_milli_seconds(0);
-                status.set_elapsed_seconds(0);
-                status.set_output_buffer_size(0);
-                status.set_output_buffer_fullness(0);
-                info!("Player flushed");
-                let msg = status.make_status_message(StatusCode::Flushed);
-                slim_tx_in.send(msg).ok();
+            if let Some(output) = output {
+                output.stop();
+                if let Ok(mut status) = status.lock() {
+                    status.set_elapsed_milli_seconds(0);
+                    status.set_elapsed_seconds(0);
+                    status.set_output_buffer_size(0);
+                    status.set_output_buffer_fullness(0);
+                    info!("Player flushed");
+                    let msg = status.make_status_message(StatusCode::Flushed);
+                    slim_tx_in.send(msg).ok();
+                }
             }
         }
 
         ServerMessage::Flush => {
             info!("Flushing");
-            output.flush();
-            if let Ok(mut status) = status.lock() {
-                status.set_elapsed_milli_seconds(0);
-                status.set_elapsed_seconds(0);
-                status.set_output_buffer_size(0);
-                status.set_output_buffer_fullness(0);
-                info!("Player flushed");
-                let msg = status.make_status_message(StatusCode::Flushed);
-                slim_tx_in.send(msg).ok();
+            if let Some(output) = output {
+                output.flush();
+                if let Ok(mut status) = status.lock() {
+                    status.set_elapsed_milli_seconds(0);
+                    status.set_elapsed_seconds(0);
+                    status.set_output_buffer_size(0);
+                    status.set_output_buffer_fullness(0);
+                    info!("Player flushed");
+                    let msg = status.make_status_message(StatusCode::Flushed);
+                    slim_tx_in.send(msg).ok();
+                }
             }
         }
 
         ServerMessage::Pause(interval) => {
             info!("Pause requested with interval {:?}", interval);
-            if interval.is_zero() {
-                if output.pause() {
-                    if let Ok(mut status) = status.lock() {
-                        info!("Sending paused to server");
-                        let msg = status.make_status_message(StatusCode::Pause);
-                        slim_tx_in.send(msg).ok();
+            if let Some(output) = output {
+                if interval.is_zero() {
+                    if output.pause() {
+                        if let Ok(mut status) = status.lock() {
+                            info!("Sending paused to server");
+                            let msg = status.make_status_message(StatusCode::Pause);
+                            slim_tx_in.send(msg).ok();
+                        }
                     }
-                }
-            } else {
-                if output.pause() {
-                    std::thread::spawn(move || {
-                        std::thread::sleep(interval);
-                        stream_in.send(PlayerMsg::Unpause).ok();
-                    });
+                } else {
+                    if output.pause() {
+                        std::thread::spawn(move || {
+                            std::thread::sleep(interval);
+                            stream_in.send(PlayerMsg::Unpause).ok();
+                        });
+                    }
                 }
             }
         }
@@ -136,11 +146,13 @@ pub fn process_slim_msg(
         ServerMessage::Unpause(interval) => {
             info!("Resume requested with interval {:?}", interval);
             if interval.is_zero() {
-                if output.unpause() {
-                    if let Ok(mut status) = status.lock() {
-                        info!("Sending resumed to server");
-                        let msg = status.make_status_message(StatusCode::Resume);
-                        slim_tx_in.send(msg).ok();
+                if let Some(output) = output {
+                    if output.unpause() {
+                        if let Ok(mut status) = status.lock() {
+                            info!("Sending resumed to server");
+                            let msg = status.make_status_message(StatusCode::Resume);
+                            slim_tx_in.send(msg).ok();
+                        }
                     }
                 }
             } else {
@@ -220,6 +232,26 @@ pub fn process_slim_msg(
             }
         }
 
+        ServerMessage::Enable(spdif, dac) => {
+            if spdif && dac {
+                info!("Connecting output");
+                *output = AudioOutput::try_new(
+                    output_system,
+                    #[cfg(feature = "rodio")]
+                    device,
+                )
+                .ok();
+            } else {
+                info!("Disconnecting output");
+                *output = None;
+            }
+        }
+
+        ServerMessage::DisableDac => {
+            info!("Disconnecting output");
+            *output = None;
+        }
+
         cmd => {
             warn!("Unimplemented command: {:?}", cmd);
         }
@@ -232,7 +264,7 @@ pub fn process_stream_msg(
     msg: PlayerMsg,
     status: Arc<Mutex<StatusData>>,
     slim_tx_in: Sender<ClientMessage>,
-    output: &mut AudioOutput,
+    output: &mut Option<AudioOutput>,
     stream_in: Sender<PlayerMsg>,
     device: &Option<String>,
     #[cfg(feature = "notify")] quiet: &bool,
@@ -248,21 +280,27 @@ pub fn process_stream_msg(
 
         PlayerMsg::Drained => {
             info!("End of track");
-            output.shift();
-            output.unpause();
+            if let Some(output) = output {
+                output.shift();
+                output.unpause();
+            }
         }
 
         PlayerMsg::Pause => {
             info!("Pausing track");
-            output.pause();
+            if let Some(output) = output {
+                output.pause();
+            }
         }
 
         PlayerMsg::Unpause => {
-            if output.unpause() {
-                info!("Sending track unpaused by player");
-                if let Ok(mut status) = status.lock() {
-                    let msg = status.make_status_message(StatusCode::TrackStarted);
-                    slim_tx_in.send(msg).ok();
+            if let Some(output) = output {
+                if output.unpause() {
+                    info!("Sending track unpaused by player");
+                    if let Ok(mut status) = status.lock() {
+                        let msg = status.make_status_message(StatusCode::TrackStarted);
+                        slim_tx_in.send(msg).ok();
+                    }
                 }
             }
         }
@@ -311,7 +349,9 @@ pub fn process_stream_msg(
 
         #[cfg(not(feature = "notify"))]
         PlayerMsg::Decoder((decoder, stream_params)) => {
-            output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+            if let Some(output) = output {
+                output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+            }
         }
 
         #[cfg(feature = "notify")]
@@ -321,7 +361,9 @@ pub fn process_stream_msg(
                     notify(metadata);
                 }
             }
-            output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+            if let Some(output) = output {
+                output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+            }
         }
     }
 }

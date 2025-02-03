@@ -28,6 +28,7 @@
         "rodio",
         "Setname",
         "slimproto",
+        "spdif",
         "WASAPI"
     ],
 }

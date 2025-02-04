@@ -45,16 +45,17 @@ name = "vibe"
 path = "src/main.rs"
 
 [package.metadata.deb]
-maintainer = "Geoff Clements <ro2kz0@gmail.com>>"
-depends = "libc6 (>= 2.17), libpulse0, libdbus-1-3"
+maintainer = "Geoff Clements <ro2kz0@gmail.com>"
 section = "utils"
 priority = "optional"
 assets = [
-    ["target/release/vibe", "/usr/bin/", "755"]
+    ["target/release/vibe", "/usr/bin/", "755"],
+    ["README.md", "/usr/share/doc/vibe-player/README.md", "644"]
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"
-extended-description = "A music player for the Lyrion Music Server"
+extended-description = """\
+Turns your computer into a music streamer."""
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"

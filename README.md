@@ -48,12 +48,12 @@ You only need to do this once.
 
 Start the service with
 ```bash
-systemctl --user start vibe_daemon.service
+systemctl --user start vibe.service
 ```
 
 You can make it so that vibe will start whenever you login with
 ```bash
-systemctl --user enable vibe_daemon.service
+systemctl --user enable vibe.service
 ```
 
 ## Output

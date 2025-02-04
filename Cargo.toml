@@ -49,8 +49,21 @@ maintainer = "Geoff Clements <ro2kz0@gmail.com>"
 section = "utils"
 priority = "optional"
 assets = [
-    ["target/release/vibe", "/usr/bin/", "755"],
-    ["README.md", "/usr/share/doc/vibe-player/README.md", "644"]
+    [
+        "target/release/vibe",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "README.md",
+        "/usr/share/doc/vibe-player/README.md",
+        "644",
+    ],
+    [
+        "resources/vibe.service",
+        "/usr/share/doc/vibe-player/resources/vibe.service",
+        "644",
+    ],
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"

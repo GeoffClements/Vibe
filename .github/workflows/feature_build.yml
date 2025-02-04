@@ -38,7 +38,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libpulse-dev libasound2-dev libdbus-1-dev
 
       - name: Install Rust
-        uses: rustup install stable && rustup default stable
+        run: rustup install stable && rustup default stable
 
       - name: Build with features
         run: |

@@ -54,11 +54,19 @@ assets = [
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"
-extended-description = """\
-Turns your computer into a music streamer."""
+extended-description = "Turns your computer into a music streamer."
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"
 # unit-name = "vibe"
 # enable = false
 # start = false
+
+# [package.metadata.rpm]
+# package = "Vibe_Player"
+
+# [package.metadata.rpm.cargo]
+# buildflags = ["--release"]
+
+# [package.metadata.rpm.targets]
+# Vibe_Player = { path = "/usr/bin/Vibe_Player" }

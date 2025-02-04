@@ -6,6 +6,7 @@
     ],
     "cSpell.words": [
         "adpcm",
+        "buildflags",
         "conv",
         "dbus",
         "demultiplexing",
@@ -15,6 +16,7 @@
         "Emscripten",
         "flac",
         "Geoff",
+        "katyo",
         "libasound",
         "libc",
         "libdbus",
@@ -28,6 +30,7 @@
         "pipewire",
         "pulseaudio",
         "rodio",
+        "rustup",
         "Setname",
         "sgid",
         "slimproto",

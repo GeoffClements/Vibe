@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context, Error, Ok};
 #[cfg(not(feature = "pulse"))]
 use crossbeam::channel::Sender;
 #[cfg(feature = "pulse")]
@@ -15,26 +15,28 @@ use crossbeam::{atomic::AtomicCell, channel::Sender};
 use log::warn;
 use slimproto::{
     buffer::SlimBuffer,
-    proto::{PcmChannels, PcmSampleRate},
+    proto::{PcmChannels, PcmSampleRate, PcmSampleSize},
     status::StatusData,
 };
 
 use symphonia::core::{
-    audio::{AudioBuffer, Signal},
-    codecs::{Decoder as SymDecoder, DecoderOptions},
-    conv::FromSample,
-    formats::FormatOptions,
+    audio::{
+        layouts::{CHANNEL_LAYOUT_MONO, CHANNEL_LAYOUT_STEREO}, sample::{Sample, SampleFormat}, Audio, AudioBuffer, AudioBytes
+    },
+    codecs::{audio::{AudioCodecParameters, AudioDecoder as SymDecoder, AudioDecoderOptions}, CodecParameters},
+    // conv::FromSample,
+    formats::{probe::Hint, FormatOptions, FormatReader, TrackType},
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
-    probe::{Hint, ProbeResult},
-    sample::SampleFormat,
+    // probe::{Hint, ProbeResult},
+    // sample::SampleFormat,
 };
 
-#[cfg(feature = "pulse")]
-use symphonia::core::audio::{RawSample, RawSampleBuffer};
+// #[cfg(feature = "pulse")]
+// use symphonia::core::audio::{RawSample, RawSampleBuffer};
 
-#[cfg(feature = "rodio")]
-use symphonia::core::{audio::SampleBuffer, sample::Sample};
+// #[cfg(feature = "rodio")]
+// use symphonia::core::{audio::SampleBuffer, sample::Sample};
 
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
@@ -102,7 +104,7 @@ struct AudioSpec {
 }
 
 pub struct Decoder {
-    pub probed: ProbeResult,
+    pub reader: Box<dyn FormatReader>,
     pub decoder: Box<dyn SymDecoder>,
     spec: AudioSpec,
 }
@@ -111,6 +113,7 @@ impl Decoder {
     pub fn try_new(
         mss: MediaSourceStream,
         format: slimproto::proto::Format,
+        pcmsamplesize: slimproto::proto::PcmSampleSize,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
         pcmchannels: slimproto::proto::PcmChannels,
     ) -> anyhow::Result<Self> {
@@ -127,53 +130,52 @@ impl Decoder {
             }
         });
 
-        let probed = symphonia::default::get_probe()
-            .format(
+        let reader = symphonia::default::get_probe()
+            .probe(
                 &hint,
                 mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .context("Unrecognized container format")?;
 
-        let track = match probed.format.default_track() {
-            Some(track) => track,
-            None => {
-                bail!("Unable to find default track");
-            }
-        };
+        let track = reader.default_track(TrackType::Audio).context("Unable to find default track")?;
 
-        let sample_format = match track.codec_params.sample_format {
-            Some(sample_format) => sample_format.into(),
-            None => AudioFormat::F32,
-        };
+        let sample_size = match pcmsamplesize {
+            PcmSampleSize::Eight => Ok(SampleFormat::S8),
+            PcmSampleSize::Sixteen => Ok(SampleFormat::S16),
+            PcmSampleSize::Twenty => Ok(SampleFormat::S24),
+            PcmSampleSize::ThirtyTwo => Ok(SampleFormat::S32),
+            PcmSampleSize::SelfDescribing => match track.codec_params {
+                Some(CodecParameters::Audio(AudioCodecParameters { sample_format: Some(sf), .. })) => Ok(sf),
+                _ => Err(anyhow::Error::msg("Unable to set sample size"))
+            }
+        }?;
 
         let sample_rate = match pcmsamplerate {
-            PcmSampleRate::Rate(rate) => rate,
-            PcmSampleRate::SelfDescribing => track.codec_params.sample_rate.unwrap_or(44100),
-        };
+            PcmSampleRate::Rate(rate) => Ok(rate),
+            PcmSampleRate::SelfDescribing => match track.codec_params {
+                Some(CodecParameters::Audio(AudioCodecParameters { sample_rate: Some(sr), .. })) => Ok(sr),
+                _ => Err(anyhow::Error::msg("Unable to set sample rate"))
+            }
+        }?;
 
         let channels = match pcmchannels {
             PcmChannels::Mono => 1u8,
             PcmChannels::Stereo => 2,
-            PcmChannels::SelfDescribing => match track.codec_params.channel_layout {
-                Some(symphonia::core::audio::Layout::Mono) => 1,
-                Some(symphonia::core::audio::Layout::Stereo) => 2,
-                None => match track.codec_params.channels {
-                    Some(channels) => channels.count() as u8,
-                    _ => 2,
-                },
+            PcmChannels::SelfDescribing => match track.codec_params {
+                Some(CodecParameters::Audio( AudioCodecParameters { channels: Some(channels), .. })) => channels.count() as u8,
                 _ => 2,
             },
         };
 
         // Create a decoder for the track.
         let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
+            .make_audio_decoder(&track.codec_params, &AudioDecoderOptions::default())
             .context("Unable to find suitable decoder")?;
 
         Ok(Decoder {
-            probed,
+            reader,
             decoder,
             spec: AudioSpec {
                 channels,
@@ -201,19 +203,17 @@ impl Decoder {
         volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<AudioBuffer<f32>, DecoderError> {
         let decoded = loop {
-            let packet = self.probed.format.next_packet().map_err(|err| match err {
-                symphonia::core::errors::Error::IoError(err)
-                    if err.kind() == std::io::ErrorKind::UnexpectedEof
-                        && err.to_string() == "end of stream" =>
-                {
-                    DecoderError::EndOfDecode
-                }
-                symphonia::core::errors::Error::ResetRequired => {
-                    self.decoder.reset();
-                    DecoderError::Retry
-                }
-                error => DecoderError::StreamError(error),
-            })?;
+            let packet = self
+                .reader
+                .next_packet()
+                .map_err(|err| match err {
+                    symphonia::core::errors::Error::ResetRequired => {
+                        self.decoder.reset();
+                        DecoderError::Retry
+                    }
+                    error => DecoderError::StreamError(error),
+                })?
+                .or(DecoderError::EndOfDecode)?;
 
             match self.decoder.decode(&packet) {
                 Ok(decoded) => break decoded,
@@ -237,8 +237,8 @@ impl Decoder {
         limit: Option<usize>,
         volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError>
-    where
-        T: Sample + FromSample<f32>,
+where
+        T: Sample,
     {
         let limit = limit.unwrap_or_else(|| {
             if buffer.capacity() > 0 {
@@ -250,9 +250,13 @@ impl Decoder {
 
         while buffer.len() < limit {
             let audio_buffer = self.get_audio_buffer(volume.clone())?;
-            let mut sample_buffer =
-                SampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-            sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
+
+            let mut audio_spec = *audio_buffer.spec();
+            let mut sample_buffer = AudioBuffer::<T>::new(*audio_buffer.spec(), audio_buffer.capacity());
+            audio_buffer.as_generic_audio_buffer_ref().copy_bytes_interleaved_as(sample_buffer);
+            // let mut sample_buffer =
+            //     AudioBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
+            // sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
             buffer.extend_from_slice(sample_buffer.samples());
         }
 
@@ -276,19 +280,22 @@ impl Decoder {
 
         while buffer.len() < limit {
             let audio_buffer = self.get_audio_buffer(volume.clone())?;
+            let byte_audio_buffer = 
 
             match self.spec.format {
-                AudioFormat::F32 => {
-                    self.audio_to_raw::<f32>(audio_buffer, buffer);
-                }
+                AudioFormat::F32 => {},
+                AudioFormat::I32 | AudioFormat::U32 => audio_buffer.copy_bytes_interleaved(dst),
+                // AudioFormat::F32 => {
+                //     self.audio_to_raw::<f32>(audio_buffer, buffer);
+                // }
 
-                AudioFormat::I32 | AudioFormat::U32 => {
-                    self.audio_to_raw::<i32>(audio_buffer, buffer)
-                }
+                // AudioFormat::I32 | AudioFormat::U32 => {
+                //     self.audio_to_raw::<i32>(audio_buffer, buffer)
+                // }
 
-                AudioFormat::I16 | AudioFormat::U16 => {
-                    self.audio_to_raw::<i16>(audio_buffer, buffer);
-                }
+                // AudioFormat::I16 | AudioFormat::U16 => {
+                //     self.audio_to_raw::<i16>(audio_buffer, buffer);
+                // }
             };
         }
         Ok(())
@@ -296,24 +303,25 @@ impl Decoder {
 
     #[cfg(feature = "pulse")]
     fn audio_to_raw<T>(&self, audio_buffer: AudioBuffer<f32>, buffer: &mut Vec<u8>)
-    where
-        T: RawSample + FromSample<f32>,
+    // where
+    //     T: RawSample + FromSample<f32>,
     {
-        let mut raw_sample_buffer =
-            RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-        raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
-        buffer.extend_from_slice(raw_sample_buffer.as_bytes());
+        let mut byte_buffer = 
+        // let mut raw_sample_buffer =
+        //     RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
+        // raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
+        // buffer.extend_from_slice(raw_sample_buffer.as_bytes());
     }
 
     #[cfg(feature = "notify")]
     pub fn metadata(&mut self) -> Option<MetadataRevision> {
-        self.probed
+        self.reader
             .format
             .metadata()
             .current()
             .cloned()
             .or_else(|| {
-                self.probed
+                self.reader
                     .metadata
                     .get()
                     .as_ref()
@@ -349,6 +357,7 @@ pub fn make_decoder(
     status: Arc<Mutex<StatusData>>,
     threshold: u32,
     format: slimproto::proto::Format,
+    pcmsamplesize: slimproto::proto::PcmSampleSize,
     pcmsamplerate: slimproto::proto::PcmSampleRate,
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
@@ -362,14 +371,7 @@ pub fn make_decoder(
         server_ip
     };
 
-    let data_stream = match make_connection(ip, server_port, http_headers) {
-        Ok(data_s) => data_s,
-        Err(e) => {
-            warn!("Unable to connect to data stream at {}", ip);
-            return Err(e);
-        }
-    };
-
+    let data_stream = make_connection(ip, server_port, http_headers).context(format!("Unable to connect to data stream at {}", ip))?;
     stream_in.send(PlayerMsg::Connected).ok();
 
     let mss = MediaSourceStream::new(
@@ -385,7 +387,7 @@ pub fn make_decoder(
     stream_in.send(PlayerMsg::BufferThreshold).ok();
 
     Ok((
-        Decoder::try_new(mss, format, pcmsamplerate, pcmchannels)?,
+        Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
             volume,

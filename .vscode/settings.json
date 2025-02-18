@@ -27,6 +27,7 @@
         "NOFLAGS",
         "pcmchannels",
         "pcmsamplerate",
+        "pcmsamplesize",
         "pipewire",
         "pulseaudio",
         "rodio",

@@ -16,7 +16,7 @@ use crate::notify::notify;
 use crate::{audio_out::AudioOutput, decode, StreamParams};
 
 #[allow(unused)]
-pub enum PlayerMsg {
+pub enum PlayerMsg<'s> {
     EndOfDecode,
     Drained,
     Pause,
@@ -26,10 +26,10 @@ pub enum PlayerMsg {
     NotSupported,
     StreamEstablished,
     TrackStarted,
-    Decoder((decode::Decoder, StreamParams)),
+    Decoder((Arc<decode::Decoder<'s>>, StreamParams)),
 }
 
-pub fn process_slim_msg(
+pub fn process_slim_msg<'s>(
     output: &mut Option<AudioOutput>,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
@@ -37,7 +37,7 @@ pub fn process_slim_msg(
     slim_tx_in: Sender<ClientMessage>,
     volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<Mutex<StatusData>>,
-    stream_in: Sender<PlayerMsg>,
+    stream_in: Sender<PlayerMsg<'s>>,
     skip: Arc<AtomicCell<Duration>>,
     start_time: &Instant,
     output_system: &str,
@@ -65,11 +65,13 @@ pub fn process_slim_msg(
             }
         }
 
-        ServerMessage::Gain(l, r) => {
-            info!("Setting volume to ({l}, {r})");
+        ServerMessage::Gain(left, right) => {
+            info!("Setting volume to ({left}, {right})");
             if let Ok(mut vol) = volume.lock() {
-                vol[0] = l.sqrt() as f32;
-                vol[1] = r.sqrt() as f32;
+                let left = if left > 1.0 { 1.0f32 } else { left as f32 };
+                let right = if right > 1.0 { 1.0f32 } else { right as f32 };
+                vol[0] = left.sqrt();
+                vol[1] = right.sqrt();
             }
         }
 
@@ -138,6 +140,7 @@ pub fn process_slim_msg(
                     }
                 } else {
                     if output.pause() {
+                        let stream_in = stream_in.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(interval);
                             stream_in.send(PlayerMsg::Unpause).ok();
@@ -162,6 +165,7 @@ pub fn process_slim_msg(
             } else {
                 let dur = interval.saturating_sub(Instant::now() - *start_time);
                 info!("Resuming in {:?}", dur);
+                let stream_in = stream_in.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(dur);
                     stream_in.send(PlayerMsg::Unpause).ok();

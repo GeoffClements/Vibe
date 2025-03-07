@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow;
 use crossbeam::channel::Sender;
@@ -33,16 +33,16 @@ impl AudioOutput {
 
     pub fn enqueue_new_stream(
         &mut self,
-        decoder: Decoder,
+        decoder: Arc<Decoder>,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
     ) {
         match self {
             #[cfg(feature = "pulse")]
-            Self::Pulse(out) => out.enqueue_new_stream(decoder, stream_in, stream_params, device),
+            Self::Pulse(out) => out.enqueue_new_stream(decoder.clone(), stream_in, stream_params, device),
             #[cfg(feature = "rodio")]
-            Self::Rodio(out) => out.enqueue_new_stream(decoder, stream_in, stream_params, device),
+            Self::Rodio(out) => out.enqueue_new_stream(decoder.clone(), stream_in, stream_params, device),
         }
     }
 

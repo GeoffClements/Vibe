@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Deref, rc::Rc, time::Duration};
+use std::{cell::RefCell, ops::Deref, rc::Rc, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use crossbeam::channel::{bounded, Sender};
@@ -186,9 +186,9 @@ impl AudioOutput {
         })
     }
 
-    pub fn enqueue_new_stream(
+    pub fn enqueue_new_stream<'s>(
         &mut self,
-        mut decoder: Decoder,
+        decoder: Arc<Decoder<'s>>,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
@@ -249,6 +249,7 @@ impl AudioOutput {
             let stream_ref = Rc::downgrade(&stream.clone().into_inner());
             let drained_ref = drained.clone();
             let stream_in_ref = stream_in.clone();
+            let decoder = decoder.clone();
             (*self.mainloop).borrow_mut().lock();
             stream.set_write_callback(Box::new(move |len| {
                 if *drained_ref.borrow() {

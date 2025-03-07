@@ -16,21 +16,21 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 
-pub struct DecoderSource {
-    decoder: Decoder,
+pub struct DecoderSource<'s> {
+    decoder: Decoder<'s>,
     frame: VecDeque<f32>,
     stream_params: StreamParams,
-    stream_in: Sender<PlayerMsg>,
+    stream_in: Sender<PlayerMsg<'s>>,
     start_flag: bool,
     eod_flag: bool,
 }
 
-impl DecoderSource {
+impl<'s> DecoderSource<'s> {
     fn new(
-        decoder: Decoder,
+        decoder: Decoder<'s>,
         stream_params: StreamParams,
         capacity: usize,
-        stream_in: Sender<PlayerMsg>,
+        stream_in: Sender<PlayerMsg<'s>>,
     ) -> Self {
         DecoderSource {
             decoder,
@@ -43,7 +43,7 @@ impl DecoderSource {
     }
 }
 
-impl Source for DecoderSource {
+impl<'s> Source for DecoderSource<'s> {
     fn current_frame_len(&self) -> Option<usize> {
         match self.frame.len() {
             0 => None,
@@ -64,7 +64,7 @@ impl Source for DecoderSource {
     }
 }
 
-impl Iterator for DecoderSource {
+impl<'s> Iterator for DecoderSource<'s> {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -76,7 +76,7 @@ impl Iterator for DecoderSource {
         if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
             loop {
-                match self.decoder.fill_sample_buffer::<f32>(
+                match self.decoder.fill_sample_buffer(
                     &mut audio_buf,
                     Some(2 * MIN_AUDIO_BUFFER_SIZE),
                     self.stream_params.volume.clone(),
@@ -131,7 +131,7 @@ impl Stream {
         })
     }
 
-    fn play(&mut self, source: DecoderSource) {
+    fn play<'s>(&mut self, source: DecoderSource<'s>) {
         self.sink.append(source);
     }
 

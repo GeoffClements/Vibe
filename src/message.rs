@@ -77,15 +77,15 @@ pub fn process_slim_msg(
 
         ServerMessage::Status(ts) => {
             // info!("Received status tick from server with timestamp {:#?}", ts);
-            let dur = match output {
+            let play_time = match output {
                 Some(output) => output.get_dur(),
                 None => Duration::ZERO,
             };
 
             if let Ok(mut status) = status.lock() {
                 // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
-                status.set_elapsed_milli_seconds(dur.as_millis() as u32);
-                status.set_elapsed_seconds(dur.as_secs() as u32);
+                status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
+                status.set_elapsed_seconds(play_time.as_secs() as u32);
                 status.set_timestamp(ts);
 
                 let msg = status.make_status_message(StatusCode::Timer);
@@ -128,12 +128,19 @@ pub fn process_slim_msg(
         }
 
         ServerMessage::Pause(interval) => {
+            let play_time = match output {
+                Some(output) => output.get_dur(),
+                None => Duration::ZERO,
+            };
+
             info!("Pause requested with interval {:?}", interval);
             if let Some(output) = output {
                 if interval.is_zero() {
                     if output.pause() {
                         if let Ok(mut status) = status.lock() {
                             info!("Sending paused to server");
+                            status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
+                            status.set_elapsed_seconds(play_time.as_secs() as u32);
                             let msg = status.make_status_message(StatusCode::Pause);
                             slim_tx_in.send(msg).ok();
                         }
@@ -152,11 +159,19 @@ pub fn process_slim_msg(
 
         ServerMessage::Unpause(interval) => {
             info!("Resume requested with interval {:?}", interval);
+
+            let play_time = match output {
+                Some(output) => output.get_dur(),
+                None => Duration::ZERO,
+            };
+
             if interval.is_zero() {
                 if let Some(output) = output {
                     if output.unpause() {
                         if let Ok(mut status) = status.lock() {
                             info!("Sending resumed to server");
+                            status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
+                            status.set_elapsed_seconds(play_time.as_secs() as u32);
                             let msg = status.make_status_message(StatusCode::Resume);
                             slim_tx_in.send(msg).ok();
                         }
@@ -171,6 +186,8 @@ pub fn process_slim_msg(
                     stream_in.send(PlayerMsg::Unpause).ok();
                     if let Ok(mut status) = status.lock() {
                         info!("Sending resumed to server");
+                        status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
+                        status.set_elapsed_seconds(play_time.as_secs() as u32);
                         let msg = status.make_status_message(StatusCode::Resume);
                         slim_tx_in.send(msg).ok();
                     }

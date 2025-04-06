@@ -1235,6 +1235,7 @@ name = "symphonia-format-isomp4"
 version = "0.5.4"
 source = "git+https://github.com/pdeljanov/Symphonia.git?branch=dev-0.6#c7efbcb05dde274d13a50b4f7aac9db4c773f602"
 dependencies = [
+ "encoding_rs",
  "log",
  "symphonia-common",
  "symphonia-core",

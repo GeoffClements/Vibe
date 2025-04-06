@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Deref, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::RefCell, ops::Deref, rc::Rc, time::Duration};
 
 use anyhow::anyhow;
 use crossbeam::channel::{bounded, Sender};
@@ -186,9 +186,9 @@ impl AudioOutput {
         })
     }
 
-    pub fn enqueue_new_stream<'s>(
+    pub fn enqueue_new_stream(
         &mut self,
-        decoder: Arc<Decoder<'s>>,
+        mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
@@ -214,11 +214,6 @@ impl AudioOutput {
                     stream_in.send(PlayerMsg::EndOfDecode).ok();
                 }
 
-                // Err(DecoderError::Unhandled) => {
-                //     warn!("Unhandled format");
-                //     stream_in.send(PlayerMsg::NotSupported).ok();
-                //     return;
-                // }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     stream_in.send(PlayerMsg::NotSupported).ok();
@@ -249,7 +244,6 @@ impl AudioOutput {
             let stream_ref = Rc::downgrade(&stream.clone().into_inner());
             let drained_ref = drained.clone();
             let stream_in_ref = stream_in.clone();
-            let decoder = decoder.clone();
             (*self.mainloop).borrow_mut().lock();
             stream.set_write_callback(Box::new(move |len| {
                 if *drained_ref.borrow() {

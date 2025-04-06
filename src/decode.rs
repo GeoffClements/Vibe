@@ -6,42 +6,30 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::Context;
 #[cfg(not(feature = "pulse"))]
 use crossbeam::channel::Sender;
 #[cfg(feature = "pulse")]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 
-use log::warn;
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate, PcmSampleSize},
     status::StatusData,
 };
 
-use symphonia::core::audio::conv::IntoSample;
 use symphonia::core::{
-    audio::{
-        layouts::{CHANNEL_LAYOUT_MONO, CHANNEL_LAYOUT_STEREO},
-        sample::{Sample, SampleFormat},
-        Audio, AudioBuffer, AudioBytes, GenericAudioBufferRef,
-    },
+    audio::
+        sample::SampleFormat
+    ,
     codecs::{
         audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions},
         CodecParameters,
     },
-    // conv::FromSample,
-    formats::{probe::Hint, FormatOptions, FormatReader, Packet, TrackType},
+    formats::{probe::Hint, FormatOptions, FormatReader, TrackType},
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
-    // probe::{Hint, ProbeResult},
-    // sample::SampleFormat,
 };
-// #[cfg(feature = "pulse")]
-// use symphonia::core::audio::{RawSample, RawSampleBuffer};
-
-// #[cfg(feature = "rodio")]
-// use symphonia::core::{audio::SampleBuffer, sample::Sample};
 
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
@@ -108,15 +96,15 @@ struct AudioSpec {
     format: AudioFormat,
 }
 
-pub struct Decoder<'s> {
-    pub reader: Box<dyn FormatReader + 's>,
+pub struct Decoder {
+    pub reader: Box<dyn FormatReader + 'static>,
     pub decoder: Box<dyn AudioDecoder>,
     spec: AudioSpec,
 }
 
-impl<'s> Decoder<'s> {
+impl Decoder {
     pub fn try_new(
-        mss: MediaSourceStream<'s>,
+        mss: MediaSourceStream<'static>,
         format: slimproto::proto::Format,
         pcmsamplesize: slimproto::proto::PcmSampleSize,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
@@ -248,16 +236,19 @@ impl<'s> Decoder<'s> {
             .map(|vol| (vol[0], vol[1]))
             .unwrap_or((0.5, 0.5));
 
-        let mut temp_buffer: Vec<f32> = Vec::with_capacity(decoded.byte_len_as::<f32>());
-        decoded.copy_to_vec_interleaved(&mut temp_buffer);
-        temp_buffer.as_mut_slice().chunks_exact_mut(2).for_each(|frame| {
-            if let [l, r] = frame {
+        let mut audio_buffer: Vec<f32> = Vec::with_capacity(decoded.byte_len_as::<f32>());
+        decoded.copy_to_vec_interleaved(&mut audio_buffer);
+        audio_buffer
+            .as_mut_slice()
+            .chunks_exact_mut(2)
+            .for_each(|frame| {
+                if let [l, r] = frame {
                     *l *= left_volume;
                     *r *= right_volume;
                 }
-        });
+            });
 
-        Ok(temp_buffer)
+        Ok(audio_buffer)
     }
 
     #[cfg(feature = "rodio")]
@@ -277,13 +268,6 @@ impl<'s> Decoder<'s> {
 
         while buffer.len() < limit {
             let audio_buffer = self.get_audio_buffer(volume.clone())?;
-
-            // let mut audio_spec = *audio_buffer.spec();
-            // let mut sample_buffer = AudioBuffer::<T>::new(*audio_buffer.spec(), audio_buffer.capacity());
-            // audio_buffer.as_generic_audio_buffer_ref().copy_bytes_interleaved_as::<T>(sample_buffer);
-            // let mut sample_buffer =
-            //     AudioBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-            // sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
             buffer.extend_from_slice(&audio_buffer[..]);
         }
 
@@ -306,60 +290,24 @@ impl<'s> Decoder<'s> {
         });
 
         while buffer.len() < limit {
-            let audio_buffer = self.get_audio_buffer(volume.clone())?;
-            buffer.extend_from_slice(
-                &audio_buffer
-                    .into_iter()
-                    .flat_map(|s| s.to_ne_bytes().into_iter())
-                    .collect()[..],
-            );
-            // match self.spec.format {
-            //     AudioFormat::F32 => buffer.extend_from_slice(&audio_buffer.into_iter().flat_map(|s| s.to_le_bytes().into_iter()).collect()[..]),
-
-            //     AudioFormat::I32 | AudioFormat::U32 => buffer.extend_from_slice(&audio_buffer.into_iter().map(|s| s as i32).collect()[..]),
-
-            //     AudioFormat::F32 => {
-            //         self.audio_to_raw::<f32>(audio_buffer, buffer);
-            //     }
-
-            //     AudioFormat::I32 | AudioFormat::U32 => {
-            //         self.audio_to_raw::<i32>(audio_buffer, buffer)
-            //     }
-
-            //     AudioFormat::I16 | AudioFormat::U16 => {
-            //         self.audio_to_raw::<i16>(audio_buffer, buffer);
-            //     }
-            // };
+            let audio_buffer: Vec<_> = self
+                .get_audio_buffer(volume.clone())?
+                .iter()
+                .flat_map(|s| s.to_ne_bytes())
+                .collect();
+            
+            buffer.extend_from_slice(&audio_buffer[..]);
         }
+
         Ok(())
     }
-
-    // #[cfg(feature = "pulse")]
-    // fn audio_to_raw<T>(&self, audio_buffer: AudioBuffer<f32>, buffer: &mut Vec<u8>)
-    // // where
-    // //     T: RawSample + FromSample<f32>,
-    // {
-    //     let mut byte_buffer =
-    //     // let mut raw_sample_buffer =
-    //     //     RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-    //     // raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
-    //     // buffer.extend_from_slice(raw_sample_buffer.as_bytes());
-    // }
 
     #[cfg(feature = "notify")]
     pub fn metadata(&mut self) -> Option<MetadataRevision> {
         self.reader
-            // .format
             .metadata()
             .current()
             .cloned()
-        // .or_else(|| {
-        //     self.reader
-        //         .metadata
-        //         .get()
-        //         .as_ref()
-        //         .and_then(|m| m.current().cloned())
-        // })
     }
 
     // pub fn samples_to_dur(&self, samples: u64) -> Duration {
@@ -381,7 +329,7 @@ impl<'s> Decoder<'s> {
     }
 }
 
-pub fn make_decoder<'s>(
+pub fn make_decoder(
     server_ip: Ipv4Addr,
     default_ip: Ipv4Addr,
     server_port: u16,
@@ -397,7 +345,7 @@ pub fn make_decoder<'s>(
     volume: Arc<Mutex<Vec<f32>>>,
     #[cfg(feature = "pulse")] skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
-) -> anyhow::Result<(Arc<Decoder<'s>>, StreamParams)> {
+) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
         default_ip
     } else {
@@ -421,7 +369,7 @@ pub fn make_decoder<'s>(
     stream_in.send(PlayerMsg::BufferThreshold).ok();
 
     Ok((
-        Arc::new(Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?),
+        Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
             volume,

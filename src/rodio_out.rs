@@ -16,21 +16,21 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 
-pub struct DecoderSource<'s> {
-    decoder: Decoder<'s>,
+pub struct DecoderSource {
+    decoder: Decoder,
     frame: VecDeque<f32>,
     stream_params: StreamParams,
-    stream_in: Sender<PlayerMsg<'s>>,
+    stream_in: Sender<PlayerMsg>,
     start_flag: bool,
     eod_flag: bool,
 }
 
-impl<'s> DecoderSource<'s> {
+impl<'s> DecoderSource {
     fn new(
-        decoder: Decoder<'s>,
+        decoder: Decoder,
         stream_params: StreamParams,
         capacity: usize,
-        stream_in: Sender<PlayerMsg<'s>>,
+        stream_in: Sender<PlayerMsg>,
     ) -> Self {
         DecoderSource {
             decoder,
@@ -43,7 +43,7 @@ impl<'s> DecoderSource<'s> {
     }
 }
 
-impl<'s> Source for DecoderSource<'s> {
+impl Source for DecoderSource {
     fn current_frame_len(&self) -> Option<usize> {
         match self.frame.len() {
             0 => None,
@@ -64,7 +64,7 @@ impl<'s> Source for DecoderSource<'s> {
     }
 }
 
-impl<'s> Iterator for DecoderSource<'s> {
+impl<'s> Iterator for DecoderSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -131,7 +131,7 @@ impl Stream {
         })
     }
 
-    fn play<'s>(&mut self, source: DecoderSource<'s>) {
+    fn play(&mut self, source: DecoderSource) {
         self.sink.append(source);
     }
 

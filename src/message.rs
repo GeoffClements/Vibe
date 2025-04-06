@@ -16,7 +16,7 @@ use crate::notify::notify;
 use crate::{audio_out::AudioOutput, decode, StreamParams};
 
 #[allow(unused)]
-pub enum PlayerMsg<'s> {
+pub enum PlayerMsg {
     EndOfDecode,
     Drained,
     Pause,
@@ -26,10 +26,10 @@ pub enum PlayerMsg<'s> {
     NotSupported,
     StreamEstablished,
     TrackStarted,
-    Decoder((Arc<decode::Decoder<'s>>, StreamParams)),
+    Decoder((decode::Decoder, StreamParams)),
 }
 
-pub fn process_slim_msg<'s>(
+pub fn process_slim_msg(
     output: &mut Option<AudioOutput>,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
@@ -37,7 +37,7 @@ pub fn process_slim_msg<'s>(
     slim_tx_in: Sender<ClientMessage>,
     volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<Mutex<StatusData>>,
-    stream_in: Sender<PlayerMsg<'s>>,
+    stream_in: Sender<PlayerMsg>,
     skip: Arc<AtomicCell<Duration>>,
     start_time: &Instant,
     output_system: &str,

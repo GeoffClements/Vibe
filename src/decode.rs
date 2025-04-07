@@ -19,9 +19,7 @@ use slimproto::{
 };
 
 use symphonia::core::{
-    audio::
-        sample::SampleFormat
-    ,
+    audio::sample::SampleFormat,
     codecs::{
         audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions},
         CodecParameters,
@@ -296,7 +294,7 @@ impl Decoder {
                 .iter()
                 .flat_map(|s| s.to_ne_bytes())
                 .collect();
-            
+
             buffer.extend_from_slice(&audio_buffer[..]);
         }
 
@@ -305,10 +303,7 @@ impl Decoder {
 
     #[cfg(feature = "notify")]
     pub fn metadata(&mut self) -> Option<MetadataRevision> {
-        self.reader
-            .metadata()
-            .current()
-            .cloned()
+        self.reader.metadata().skip_to_latest().cloned()
     }
 
     // pub fn samples_to_dur(&self, samples: u64) -> Duration {

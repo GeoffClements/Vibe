@@ -25,7 +25,7 @@ pub struct DecoderSource {
     eod_flag: bool,
 }
 
-impl<'s> DecoderSource {
+impl DecoderSource {
     fn new(
         decoder: Decoder,
         stream_params: StreamParams,
@@ -64,7 +64,7 @@ impl Source for DecoderSource {
     }
 }
 
-impl<'s> Iterator for DecoderSource {
+impl Iterator for DecoderSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {

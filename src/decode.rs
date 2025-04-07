@@ -14,7 +14,7 @@ use crossbeam::{atomic::AtomicCell, channel::Sender};
 
 use slimproto::{
     buffer::SlimBuffer,
-    proto::{PcmChannels, PcmSampleRate, PcmSampleSize},
+    proto::{PcmChannels, PcmSampleRate},
     status::StatusData,
 };
 
@@ -106,7 +106,7 @@ impl Decoder {
     pub fn try_new(
         mss: MediaSourceStream<'static>,
         format: slimproto::proto::Format,
-        pcmsamplesize: slimproto::proto::PcmSampleSize,
+        _pcmsamplesize: slimproto::proto::PcmSampleSize,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
         pcmchannels: slimproto::proto::PcmChannels,
     ) -> anyhow::Result<Self> {
@@ -136,19 +136,20 @@ impl Decoder {
             .default_track(TrackType::Audio)
             .context("Unable to find default track")?;
 
-        let sample_format = match pcmsamplesize {
-            PcmSampleSize::Eight => Ok(SampleFormat::S8),
-            PcmSampleSize::Sixteen => Ok(SampleFormat::S16),
-            PcmSampleSize::Twenty => Ok(SampleFormat::S24),
-            PcmSampleSize::ThirtyTwo => Ok(SampleFormat::S32),
-            PcmSampleSize::SelfDescribing => match track.codec_params {
-                Some(CodecParameters::Audio(AudioCodecParameters {
-                    sample_format: Some(sf),
-                    ..
-                })) => Ok(sf),
-                _ => Err(anyhow::Error::msg("Unable to set sample size")),
-            },
-        }?;
+        // let sample_format = match pcmsamplesize {
+        //     PcmSampleSize::Eight => Ok(SampleFormat::S8),
+        //     PcmSampleSize::Sixteen => Ok(SampleFormat::S16),
+        //     PcmSampleSize::Twenty => Ok(SampleFormat::S24),
+        //     PcmSampleSize::ThirtyTwo => Ok(SampleFormat::S32),
+        //     PcmSampleSize::SelfDescribing => match track.codec_params {
+        //         Some(CodecParameters::Audio(AudioCodecParameters {
+        //             sample_format: Some(sf),
+        //             ..
+        //         })) => Ok(sf),
+        //         _ => Err(anyhow::Error::msg("Unable to set sample size")),
+        //     },
+        // }?;
+        let sample_format = SampleFormat::F32;
 
         let sample_rate = match pcmsamplerate {
             PcmSampleRate::Rate(rate) => Ok(rate),

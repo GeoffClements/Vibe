@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Vibe_Player"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -839,13 +839,20 @@ dependencies = [
 [[package]]
 name = "notify-rust"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "4.11.7"
 ||||||| parent of 2de0b1f (Update dependecies)
 version = "4.11.4"
 =======
 version = "4.11.6"
 >>>>>>> 2de0b1f (Update dependecies)
+||||||| parent of ae0e88d (Version bump and tag release)
+version = "4.11.6"
+=======
+version = "4.11.7"
+>>>>>>> ae0e88d (Version bump and tag release)
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 <<<<<<< HEAD
 checksum = "6442248665a5aa2514e794af3b39661a8e73033b1cc5e59899e1276117ee4400"
 ||||||| parent of 2de0b1f (Update dependecies)
@@ -853,6 +860,11 @@ checksum = "96ae13fb6065b0865d2310dfa55ce319245052ed95fbbe2bc87c99962c58d73f"
 =======
 checksum = "4012c5a725bfa4cfd09c2f3abf29fb0b03a528d02787744e485c8014cdf6f1c0"
 >>>>>>> 2de0b1f (Update dependecies)
+||||||| parent of ae0e88d (Version bump and tag release)
+checksum = "4012c5a725bfa4cfd09c2f3abf29fb0b03a528d02787744e485c8014cdf6f1c0"
+=======
+checksum = "6442248665a5aa2514e794af3b39661a8e73033b1cc5e59899e1276117ee4400"
+>>>>>>> ae0e88d (Version bump and tag release)
 dependencies = [
  "dbus",
  "futures-lite",
@@ -1060,7 +1072,23 @@ dependencies = [
 name = "r-efi"
 version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 checksum = "74765f6d916ee2faa39bc8e68e4f3ed8949b48cccdac59983d287a7cb71ce9c5"
+||||||| parent of ae0e88d (Version bump and tag release)
+checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+dependencies = [
+ "getrandom",
+ "libredox",
+ "thiserror",
+]
+=======
+checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+dependencies = [
+ "getrandom",
+ "libredox",
+ "thiserror 1.0.69",
+]
+>>>>>>> ae0e88d (Version bump and tag release)
 
 [[package]]
 name = "regex"
@@ -1465,8 +1493,27 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "thiserror-impl"
 version = "2.0.12"
+||||||| parent of ae0e88d (Version bump and tag release)
+name = "time"
+version = "0.3.37"
+=======
+name = "thiserror-impl"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "time"
+version = "0.3.37"
+>>>>>>> ae0e88d (Version bump and tag release)
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
 dependencies = [
@@ -1748,6 +1795,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "windows-link"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1769,6 +1817,25 @@ dependencies = [
 ]
 
 [[package]]
+||||||| parent of ae0e88d (Version bump and tag release)
+=======
+name = "windows-link"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76840935b766e1b0a05c0066835fb9ec80071d4c09a16f6bd5f7e655e3c14c38"
+
+[[package]]
+name = "windows-numerics"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
+dependencies = [
+ "windows-core 0.61.0",
+ "windows-link",
+]
+
+[[package]]
+>>>>>>> ae0e88d (Version bump and tag release)
 name = "windows-result"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -9,9 +9,7 @@ use rodio::{
 use slimproto::proto::AutoStart;
 
 use crate::{
-    decode::{Decoder, DecoderError},
-    message::PlayerMsg,
-    StreamParams,
+    audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg, StreamParams
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
@@ -148,13 +146,13 @@ impl Stream {
     }
 }
 
-pub struct AudioOutput {
+pub struct RodioAudioOutput {
     host: rodio::cpal::Host,
     device: rodio::cpal::Device,
     playing: Option<Stream>,
 }
 
-impl AudioOutput {
+impl RodioAudioOutput {
     pub fn try_new(device_name: &Option<String>) -> anyhow::Result<Self> {
         let host = rodio::cpal::default_host();
         let device = if let Some(dev_name) = device_name {
@@ -174,8 +172,10 @@ impl AudioOutput {
             playing: None,
         })
     }
+}
 
-    pub fn enqueue_new_stream(
+impl AudioOutput for RodioAudioOutput {
+    fn enqueue_new_stream(
         &mut self,
         decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
@@ -203,7 +203,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn unpause(&self) -> bool {
+    fn unpause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
             (*stream).unpause();
             return true;
@@ -211,7 +211,7 @@ impl AudioOutput {
         false
     }
 
-    pub fn pause(&self) -> bool {
+    fn pause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
             (*stream).pause();
             return true;
@@ -219,29 +219,29 @@ impl AudioOutput {
         false
     }
 
-    pub fn stop(&mut self) {
+    fn stop(&mut self) {
         if let Some(ref stream) = self.playing {
             (*stream).stop();
         }
         self.flush();
     }
 
-    pub fn flush(&mut self) {
+    fn flush(&mut self) {
         self.playing = None;
     }
 
-    pub fn shift(&mut self) {
+    fn shift(&mut self) {
         // Noop - uses rodio's stream append
     }
 
-    pub fn get_dur(&self) -> Duration {
+    fn get_dur(&self) -> Duration {
         match self.playing {
             Some(ref stream) => stream.sink.get_pos(),
             None => Duration::ZERO,
         }
     }
 
-    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
+    fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let devices = self.host.output_devices()?;
         Ok(devices
             .map(|d| d.name())

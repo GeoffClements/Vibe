@@ -15,7 +15,7 @@ authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 anyhow = "1.0.97"
 clap = { version = "4.5.35", features = ["derive"] }
 crossbeam = "0.8.4"
-hostname = "0.4.0"
+hostname = "0.4.1"
 log = "0.4.27"
 notify-rust = { version = "4.11.6", default-features = false, optional = true, features = [
     "dbus",

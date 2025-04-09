@@ -13,7 +13,7 @@ use slimproto::{
 
 #[cfg(feature = "notify")]
 use crate::notify::notify;
-use crate::{audio_out::AudioOutput, decode, StreamParams};
+use crate::{audio_out::{self, AudioOutput}, decode, StreamParams};
 
 #[allow(unused)]
 pub enum PlayerMsg {
@@ -30,7 +30,7 @@ pub enum PlayerMsg {
 }
 
 pub fn process_slim_msg(
-    output: &mut Option<AudioOutput>,
+    output: &mut Option<Box<dyn AudioOutput>>,
     msg: ServerMessage,
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
@@ -262,7 +262,7 @@ pub fn process_slim_msg(
         ServerMessage::Enable(spdif, dac) => {
             if spdif && dac {
                 info!("Connecting output");
-                *output = AudioOutput::try_new(
+                *output = audio_out::make_audio_output(
                     output_system,
                     #[cfg(feature = "rodio")]
                     device,
@@ -291,7 +291,7 @@ pub fn process_stream_msg(
     msg: PlayerMsg,
     status: Arc<Mutex<StatusData>>,
     slim_tx_in: Sender<ClientMessage>,
-    output: &mut Option<AudioOutput>,
+    output: &mut Option<Box<dyn AudioOutput>>,
     stream_in: Sender<PlayerMsg>,
     device: &Option<String>,
     #[cfg(feature = "notify")] quiet: &bool,

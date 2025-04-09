@@ -16,6 +16,7 @@ use pulse::{
 };
 
 use crate::{
+    audio_out::AudioOutput,
     decode::{AudioFormat, Decoder, DecoderError},
     message::PlayerMsg,
     StreamParams,
@@ -119,14 +120,14 @@ impl Stream {
     }
 }
 
-pub struct AudioOutput {
+pub struct PulseAudioOutput {
     mainloop: Rc<RefCell<Mainloop>>,
     context: Rc<RefCell<Context>>,
     playing: Option<Stream>,
     next_up: Option<Stream>,
 }
 
-impl AudioOutput {
+impl PulseAudioOutput {
     pub fn try_new() -> anyhow::Result<Self> {
         let mainloop = Rc::new(RefCell::new(
             Mainloop::new().ok_or(pulse::error::Code::ConnectionRefused)?,
@@ -178,7 +179,7 @@ impl AudioOutput {
         (*context).borrow_mut().set_state_callback(None);
         (*mainloop).borrow_mut().unlock();
 
-        Ok(AudioOutput {
+        Ok(PulseAudioOutput {
             mainloop,
             context,
             playing: None,
@@ -186,7 +187,88 @@ impl AudioOutput {
         })
     }
 
-    pub fn enqueue_new_stream(
+    fn connect_stream(
+        &mut self,
+        mut stream: Stream,
+        device: &Option<String>,
+    ) -> anyhow::Result<()> {
+        (*self.mainloop).borrow_mut().lock();
+
+        // Stream state change callback
+        {
+            let mainloop_ref = self.mainloop.clone();
+            let stream_ref = self.context.clone();
+            stream.set_state_callback(Some(Box::new(move || {
+                let state = unsafe { (*stream_ref.as_ptr()).get_state() };
+                match state {
+                    State::Ready | State::Failed | State::Terminated => unsafe {
+                        (*mainloop_ref.as_ptr()).signal(false);
+                    },
+                    _ => {}
+                }
+            })));
+        }
+
+        let flags =
+            SmFlagSet::START_CORKED | SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::INTERPOLATE_TIMING;
+
+        stream.connect_playback(device.as_deref(), None, flags, None, None)?;
+
+        // Wait for stream to be ready
+        loop {
+            match stream.get_state() {
+                pulse::stream::State::Ready => {
+                    break;
+                }
+                pulse::stream::State::Failed | pulse::stream::State::Terminated => {
+                    (*self.mainloop).borrow_mut().unlock();
+                    (*self.mainloop).borrow_mut().stop();
+                    return Err(anyhow!(pulse::error::PAErr(
+                        pulse::error::Code::ConnectionTerminated as i32,
+                    )));
+                }
+                _ => {
+                    (*self.mainloop).borrow_mut().wait();
+                }
+            }
+        }
+
+        stream.set_state_callback(None);
+        (*self.mainloop).borrow_mut().unlock();
+
+        Ok(())
+    }
+
+    fn play(&mut self) -> bool {
+        if let Some(ref mut stream) = self.playing {
+            (*self.mainloop).borrow_mut().lock();
+            stream.play();
+            (*self.mainloop).borrow_mut().unlock();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn enqueue(
+        &mut self,
+        stream: Stream,
+        autostart: slimproto::proto::AutoStart,
+        _stream_in: Sender<PlayerMsg>,
+    ) {
+        if self.playing.is_some() {
+            self.next_up = Some(stream);
+        } else {
+            self.playing = Some(stream);
+            if autostart == slimproto::proto::AutoStart::Auto {
+                self.play();
+            }
+        }
+    }
+}
+
+impl AudioOutput for PulseAudioOutput {
+    fn enqueue_new_stream(
         &mut self,
         mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
@@ -329,86 +411,8 @@ impl AudioOutput {
         self.enqueue(stream, stream_params.autostart, stream_in.clone());
     }
 
-    fn connect_stream(
-        &mut self,
-        mut stream: Stream,
-        device: &Option<String>,
-    ) -> anyhow::Result<()> {
-        (*self.mainloop).borrow_mut().lock();
 
-        // Stream state change callback
-        {
-            let mainloop_ref = self.mainloop.clone();
-            let stream_ref = self.context.clone();
-            stream.set_state_callback(Some(Box::new(move || {
-                let state = unsafe { (*stream_ref.as_ptr()).get_state() };
-                match state {
-                    State::Ready | State::Failed | State::Terminated => unsafe {
-                        (*mainloop_ref.as_ptr()).signal(false);
-                    },
-                    _ => {}
-                }
-            })));
-        }
-
-        let flags =
-            SmFlagSet::START_CORKED | SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::INTERPOLATE_TIMING;
-
-        stream.connect_playback(device.as_deref(), None, flags, None, None)?;
-
-        // Wait for stream to be ready
-        loop {
-            match stream.get_state() {
-                pulse::stream::State::Ready => {
-                    break;
-                }
-                pulse::stream::State::Failed | pulse::stream::State::Terminated => {
-                    (*self.mainloop).borrow_mut().unlock();
-                    (*self.mainloop).borrow_mut().stop();
-                    return Err(anyhow!(pulse::error::PAErr(
-                        pulse::error::Code::ConnectionTerminated as i32,
-                    )));
-                }
-                _ => {
-                    (*self.mainloop).borrow_mut().wait();
-                }
-            }
-        }
-
-        stream.set_state_callback(None);
-        (*self.mainloop).borrow_mut().unlock();
-
-        Ok(())
-    }
-
-    fn play(&mut self) -> bool {
-        if let Some(ref mut stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            stream.play();
-            (*self.mainloop).borrow_mut().unlock();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn enqueue(
-        &mut self,
-        stream: Stream,
-        autostart: slimproto::proto::AutoStart,
-        _stream_in: Sender<PlayerMsg>,
-    ) {
-        if self.playing.is_some() {
-            self.next_up = Some(stream);
-        } else {
-            self.playing = Some(stream);
-            if autostart == slimproto::proto::AutoStart::Auto {
-                self.play();
-            }
-        }
-    }
-
-    pub fn unpause(&mut self) -> bool {
+    fn unpause(&mut self) -> bool {
         if let Some(ref mut stream) = self.playing {
             (*self.mainloop).borrow_mut().lock();
             stream.unpause();
@@ -419,7 +423,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn pause(&mut self) -> bool {
+    fn pause(&mut self) -> bool {
         if let Some(ref mut stream) = self.playing {
             (*self.mainloop).borrow_mut().lock();
             stream.pause();
@@ -430,7 +434,7 @@ impl AudioOutput {
         }
     }
 
-    pub fn stop(&mut self) {
+    fn stop(&mut self) {
         if let Some(ref mut stream) = self.playing {
             (*self.mainloop).borrow_mut().lock();
             stream.disconnect().ok();
@@ -440,11 +444,11 @@ impl AudioOutput {
         self.playing = None;
     }
 
-    pub fn flush(&mut self) {
+    fn flush(&mut self) {
         self.stop();
     }
 
-    pub fn shift(&mut self) {
+    fn shift(&mut self) {
         let old_stream = self.playing.take();
         self.playing = self.next_up.take();
 
@@ -459,14 +463,14 @@ impl AudioOutput {
         }
     }
 
-    pub fn get_dur(&self) -> Duration {
+    fn get_dur(&self) -> Duration {
         match self.playing {
             Some(ref stream) => stream.get_pos(),
             None => Duration::ZERO,
         }
     }
 
-    pub fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
+    fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
 
@@ -494,7 +498,7 @@ impl AudioOutput {
     }
 }
 
-impl Drop for AudioOutput {
+impl Drop for PulseAudioOutput {
     fn drop(&mut self) {
         (*self.context).borrow_mut().disconnect();
     }

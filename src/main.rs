@@ -14,7 +14,6 @@ use crossbeam::{
     channel::{bounded, Select},
 };
 
-use audio_out::AudioOutput;
 use log::info;
 use message::{process_slim_msg, process_stream_msg};
 use simple_logger::SimpleLogger;
@@ -111,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 
     // List the output devices and terminate
     if cli.list {
-        if let Ok(output) = AudioOutput::try_new(
+        if let Ok(output) = audio_out::make_audio_output(
             output_system,
             #[cfg(feature = "rodio")]
             &cli.device,

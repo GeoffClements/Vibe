@@ -119,7 +119,7 @@ impl Decoder {
         hint.mime_type({
             match format {
                 slimproto::proto::Format::Pcm => "audio/x-adpcm",
-                slimproto::proto::Format::Mp3 => "audio/mpeg3",
+                slimproto::proto::Format::Mp3 => "audio/mpeg",
                 slimproto::proto::Format::Aac => "audio/aac",
                 slimproto::proto::Format::Ogg => "audio/ogg",
                 slimproto::proto::Format::Flac => "audio/flac",

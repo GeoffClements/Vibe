@@ -182,6 +182,7 @@ fn main() -> anyhow::Result<()> {
                         #[cfg(feature = "rodio")]
                         &cli.device,
                     )?,
+
                     None => {
                         info!("Lost contact with server, resetting");
                         slim_tx_in.send(ClientMessage::Bye(1)).ok();
@@ -191,6 +192,7 @@ fn main() -> anyhow::Result<()> {
                         break;
                     }
                 },
+
                 op if op.index() == stream_idx => {
                     let msg = op.recv(&stream_out)?;
                     process_stream_msg(
@@ -204,6 +206,7 @@ fn main() -> anyhow::Result<()> {
                         &cli.quiet,
                     );
                 }
+                
                 _ => {}
             }
         }

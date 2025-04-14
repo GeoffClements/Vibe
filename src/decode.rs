@@ -1,5 +1,5 @@
 use std::{
-    io::Write,
+    io::{BufRead, BufReader, Write},
     mem,
     net::{Ipv4Addr, TcpStream},
     sync::{Arc, Mutex},
@@ -371,6 +371,20 @@ pub fn make_decoder(
     };
 
     stream_in.send(PlayerMsg::Connected).ok();
+
+    let mut data_stream = BufReader::new(data_stream);
+    
+    // Read until we encounter the end of headers (a blank line: "\r\n\r\n")
+    {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes_read = data_stream.read_line(&mut line)?;
+            if bytes_read == 0 || line == "\r\n" {
+                break;
+            }
+        }
+    }
 
     let mss = MediaSourceStream::new(
         Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(

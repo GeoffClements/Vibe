@@ -1,6 +1,6 @@
 [package]
 name = "Vibe_Player"
-version = "0.5.2"
+version = "0.5.1"
 edition = "2021"
 description = "A music player for the Lyrion Music Server"
 license = "MIT"
@@ -29,7 +29,10 @@ simple_logger = { version = "5.0.0", default-features = false, features = [
     "colors",
 ] }
 slimproto = "0.1.20"
-symphonia = { version = "0.5.4", features = ["all-codecs", "all-formats"] }
+symphonia = { version = "*", git = "https://github.com/pdeljanov/Symphonia.git", branch = "dev-0.6", features = [
+    "all-codecs",
+    "all-formats",
+] }
 
 [profile.dev.package."symphonia"]
 opt-level = 3

@@ -12,8 +12,8 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.97"
-clap = { version = "4.5.35", features = ["derive"] }
+anyhow = "1.0.98"
+clap = { version = "4.5.36", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.1"
 log = "0.4.27"

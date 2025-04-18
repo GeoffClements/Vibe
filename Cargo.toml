@@ -12,8 +12,8 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.97"
-clap = { version = "4.5.35", features = ["derive"] }
+anyhow = "1.0.98"
+clap = { version = "4.5.37", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.1"
 log = "0.4.27"
@@ -28,7 +28,7 @@ simple_logger = { version = "5.0.0", default-features = false, features = [
     "stderr",
     "colors",
 ] }
-slimproto = "0.1.20"
+slimproto = "0.1.21"
 symphonia = { version = "*", git = "https://github.com/pdeljanov/Symphonia.git", branch = "dev-0.6", features = [
     "all-codecs",
     "all-formats",

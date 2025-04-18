@@ -153,7 +153,6 @@ fn main() -> anyhow::Result<()> {
         let (slim_rx_in, slim_rx_out) = bounded(1);
         proto::run(
             cli.server,
-            name.clone(),
             slim_rx_in.clone(),
             slim_tx_out.clone(),
         );

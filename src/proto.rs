@@ -1,8 +1,4 @@
-use std::{
-    net::{Ipv4Addr, SocketAddrV4},
-    sync::{Arc, RwLock},
-};
-
+use std::net::{Ipv4Addr, SocketAddrV4};
 use crossbeam::channel::{Receiver, Sender};
 use log::{error, info};
 use slimproto::{
@@ -12,7 +8,6 @@ use slimproto::{
 
 pub fn run(
     server_addr: Option<SocketAddrV4>,
-    name: Arc<RwLock<String>>,
     slim_rx_in: Sender<Option<ServerMessage>>,
     slim_tx_out: Receiver<ClientMessage>,
 ) {
@@ -37,9 +32,6 @@ pub fn run(
         // update server details when a Serv message is received
         'outer: loop {
             let mut caps = Capabilities::default();
-            if let Ok(name) = name.read() {
-                caps.add_name(&name);
-            }
             caps.add(Capability::Maxsamplerate(192000));
             if syncgroupid.len() > 0 {
                 info!("Joining sync group: {syncgroupid}");

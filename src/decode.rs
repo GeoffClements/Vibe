@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, Write},
     mem,
     net::{Ipv4Addr, TcpStream},
     sync::{Arc, Mutex},
@@ -372,8 +372,16 @@ pub fn make_decoder(
 
     stream_in.send(PlayerMsg::Connected).ok();
 
-    let mut data_stream = BufReader::new(data_stream);
-    
+    let mut data_stream = SlimBuffer::with_capacity(
+        threshold as usize * 1024,
+        data_stream,
+        status.clone(),
+        threshold,
+        None,
+    );
+
+    stream_in.send(PlayerMsg::BufferThreshold).ok();
+
     // Read until we encounter the end of headers (a blank line: "\r\n\r\n")
     {
         let mut line = String::new();
@@ -387,16 +395,9 @@ pub fn make_decoder(
     }
 
     let mss = MediaSourceStream::new(
-        Box::new(ReadOnlySource::new(SlimBuffer::with_capacity(
-            threshold as usize * 1024,
-            data_stream,
-            status,
-            threshold,
-            None,
-        ))),
+        Box::new(ReadOnlySource::new(data_stream)),
         Default::default(),
     );
-    stream_in.send(PlayerMsg::BufferThreshold).ok();
 
     Ok((
         Decoder::try_new(mss, format, pcmsamplerate, pcmchannels)?,

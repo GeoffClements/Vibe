@@ -10,13 +10,12 @@ pub fn notify(metadata: MetadataRevision) {
             .iter()
             .fold(HashMap::new(), |mut tags, tag| {
                 match tag.std {
-                    Some(StandardTag::Artist(ref artist)) => {
-                        tags.entry("artist")
-                            .or_insert_with(|| artist.deref().clone());
-                    }
-
                     Some(StandardTag::AlbumArtist(ref album_artist)) => {
                         tags.insert("artist", album_artist.deref().clone());
+                    }
+
+                    Some(StandardTag::Artist(ref artist)) => {
+                        tags.entry("artist").or_insert(artist.deref().clone());
                     }
 
                     Some(StandardTag::Album(ref album)) => {
@@ -27,11 +26,15 @@ pub fn notify(metadata: MetadataRevision) {
                         tags.insert("track", track_title.deref().clone());
                     }
 
+                    Some(StandardTag::RecordingDate(ref year)) => {
+                        tags.insert("year", year.deref().clone());
+                    }
+
                     Some(StandardTag::ReleaseYear(ref year))
                     | Some(StandardTag::OriginalReleaseYear(ref year))
                     | Some(StandardTag::RecordingYear(ref year))
                     | Some(StandardTag::OriginalRecordingYear(ref year)) => {
-                        tags.insert("year", year.to_string());
+                        tags.entry("year").or_insert(year.to_string());
                     }
 
                     _ => {}

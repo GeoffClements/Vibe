@@ -32,6 +32,10 @@ pub fn run(
         // update server details when a Serv message is received
         'outer: loop {
             let mut caps = Capabilities::default();
+
+            let version = env!("CARGO_PKG_VERSION");
+            caps.add_name(version);
+
             caps.add(Capability::Maxsamplerate(192000));
             if syncgroupid.len() > 0 {
                 info!("Joining sync group: {syncgroupid}");

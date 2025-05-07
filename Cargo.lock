@@ -614,9 +614,9 @@ dependencies = [
 
 [[package]]
 name = "libpulse-binding"
-version = "2.29.0"
+version = "2.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "441092fb2d05962d74246a00c1b2f8c87c60fb6b38a5cc42227c229a702c0ce5"
+checksum = "909eb3049e16e373680fe65afe6e2a722ace06b671250cc4849557bc57d6a397"
 dependencies = [
  "bitflags 2.9.0",
  "libc",
@@ -1056,9 +1056,9 @@ dependencies = [
 
 [[package]]
 name = "slimproto"
-version = "0.1.21"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "408e2c0157a44a01e7fd829aeb79e8e2592575df8c88116ed5b4ca78365e3945"
+checksum = "47c0d158f60dd0f86eb85f48345762d3657563c07545be0a503f6fae86090bf1"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",

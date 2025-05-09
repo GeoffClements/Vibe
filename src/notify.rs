@@ -26,8 +26,16 @@ pub fn notify(metadata: MetadataRevision) {
                         tags.insert("track", track_title.deref().clone());
                     }
 
-                    Some(StandardTag::RecordingDate(ref year)) => {
-                        tags.insert("year", year.deref().clone());
+                    Some(StandardTag::RecordingDate(ref date)) => {
+                        let year: String = date
+                            .split('-')
+                            .map(|s| s.trim())
+                            .filter(|p| p.len() == 4)
+                            .take(1)
+                            .collect();
+                        if year.len() > 0 {
+                            tags.insert("year", year);
+                        }
                     }
 
                     Some(StandardTag::ReleaseYear(ref year))

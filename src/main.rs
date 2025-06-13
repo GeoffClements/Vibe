@@ -19,7 +19,7 @@ use message::{process_slim_msg, process_stream_msg};
 use simple_logger::SimpleLogger;
 use slimproto::{
     proto::{ClientMessage, SLIM_PORT},
-    status::StatusData,
+    status::{StatusCode, StatusData},
 };
 
 mod audio_out;
@@ -151,11 +151,7 @@ fn main() -> anyhow::Result<()> {
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
         let (slim_tx_in, slim_tx_out) = bounded(1);
         let (slim_rx_in, slim_rx_out) = bounded(1);
-        proto::run(
-            cli.server,
-            slim_rx_in.clone(),
-            slim_tx_out.clone(),
-        );
+        proto::run(cli.server, slim_rx_in.clone(), slim_tx_out.clone());
 
         let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
         let (stream_in, stream_out) = bounded(10);
@@ -164,8 +160,8 @@ fn main() -> anyhow::Result<()> {
         let stream_idx = select.recv(&stream_out);
 
         loop {
-            match select.select() {
-                op if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
+            match select.select_timeout(Duration::from_secs(1)) {
+                Ok(op) if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
                     Some(msg) => process_slim_msg(
                         &mut output,
                         msg,
@@ -192,7 +188,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 },
 
-                op if op.index() == stream_idx => {
+                Ok(op) if op.index() == stream_idx => {
                     let msg = op.recv(&stream_out)?;
                     process_stream_msg(
                         msg,
@@ -205,8 +201,25 @@ fn main() -> anyhow::Result<()> {
                         &cli.quiet,
                     );
                 }
-                
-                _ => {}
+
+                Ok(_) => {}
+
+                Err(_) => {
+                    let play_time = match output {
+                        Some(ref output) => output.get_dur(),
+                        None => Duration::ZERO,
+                    };
+
+                    if let Ok(mut status) = status.lock() {
+                        // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
+                        status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
+                        status.set_elapsed_seconds(play_time.as_secs() as u32);
+                        // status.set_timestamp(ts);
+
+                        let msg = status.make_status_message(StatusCode::Timer);
+                        slim_tx_in.send(msg).ok();
+                    }
+                }
             }
         }
     }

@@ -71,7 +71,7 @@ struct Cli {
         default_value = "off",
         value_parser = PossibleValuesParser::new(["trace", "debug", "error", "warn", "info", "off"])
             .map(|s| s.parse::<log::LevelFilter>().unwrap()),
-        help = "Set the highest log level")]
+        help = "Set highest log level")]
     loglevel: log::LevelFilter,
 }
 

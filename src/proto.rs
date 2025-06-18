@@ -27,7 +27,7 @@ pub fn run(
             }))
             .ok();
 
-        let mut syncgroupid = String::new();
+        let syncgroupid = String::new();
         // Outer loop to reconnect to a different server and
         // update server details when a Serv message is received
         'outer: loop {
@@ -77,33 +77,31 @@ pub fn run(
             });
 
             // Inner read loop
-            loop {
+            'zzz: loop {
                 match rx.framed_read() {
-                    Ok(msg) => {
-                        // println!("{:?}", msg);
-                        match msg {
-                            // Request to change to another server
-                            ServerMessage::Serv {
-                                ip_address: ip,
-                                sync_group_id: sgid,
-                            } => {
-                                if let Some(ref sgid) = sgid {
-                                    syncgroupid = sgid.to_owned();
+                    Ok(messages) => {
+                        for msg in messages.into_iter() {
+                            // println!("{:?}", msg);
+                            match msg {
+                                // Request to change to another server
+                                ServerMessage::Serv {
+                                    ip_address: ip,
+                                    sync_group_id: sgid,
+                                } => {
+                                    server = (ip, sgid).into();
+                                    // Now inform the main thread
+                                    slim_rx_in
+                                        .send(Some(ServerMessage::Serv {
+                                            ip_address: ip,
+                                            sync_group_id: None,
+                                        }))
+                                        .ok();
+                                    break 'zzz;
                                 }
 
-                                server = (ip, sgid).into();
-                                // Now inform the main thread
-                                slim_rx_in
-                                    .send(Some(ServerMessage::Serv {
-                                        ip_address: ip,
-                                        sync_group_id: None,
-                                    }))
-                                    .ok();
-                                break;
-                            }
-
-                            _ => {
-                                slim_rx_in.send(Some(msg)).ok();
+                                _ => {
+                                    slim_rx_in.send(Some(msg)).ok();
+                                }
                             }
                         }
                     }

@@ -28,7 +28,7 @@ simple_logger = { version = "5.0.0", default-features = false, features = [
     "stderr",
     "colors",
 ] }
-slimproto = "0.1.24"
+slimproto = "0.1.25"
 symphonia = { version = "0.5.4", features = ["all-codecs", "all-formats"] }
 
 [profile.dev.package."symphonia"]

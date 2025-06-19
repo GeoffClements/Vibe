@@ -77,7 +77,7 @@ pub fn run(
             });
 
             // Inner read loop
-            'zzz: loop {
+            'inner: loop {
                 match rx.framed_read() {
                     Ok(messages) => {
                         for msg in messages.into_iter() {
@@ -96,7 +96,7 @@ pub fn run(
                                             sync_group_id: None,
                                         }))
                                         .ok();
-                                    break 'zzz;
+                                    break 'inner;
                                 }
 
                                 _ => {

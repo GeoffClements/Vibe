@@ -60,6 +60,10 @@ impl Stream {
             .set_write_callback(Some(callback));
     }
 
+    fn unset_write_callback(&mut self) {
+        (*self.inner).borrow_mut().set_write_callback(None);
+    }
+
     fn set_underflow_callback(&mut self, callback: Option<Box<dyn FnMut() + 'static>>) {
         (*self.inner).borrow_mut().set_underflow_callback(callback)
     }
@@ -411,7 +415,6 @@ impl AudioOutput for PulseAudioOutput {
         self.enqueue(stream, stream_params.autostart, stream_in.clone());
     }
 
-
     fn unpause(&mut self) -> bool {
         if let Some(ref mut stream) = self.playing {
             (*self.mainloop).borrow_mut().lock();
@@ -437,6 +440,7 @@ impl AudioOutput for PulseAudioOutput {
     fn stop(&mut self) {
         if let Some(ref mut stream) = self.playing {
             (*self.mainloop).borrow_mut().lock();
+            stream.unset_write_callback();
             stream.disconnect().ok();
             (*self.mainloop).borrow_mut().unlock();
         }
@@ -449,18 +453,7 @@ impl AudioOutput for PulseAudioOutput {
     }
 
     fn shift(&mut self) {
-        let old_stream = self.playing.take();
         self.playing = self.next_up.take();
-
-        if let Some(old_stream) = old_stream {
-            if let Some(pa_stream) = Rc::into_inner(old_stream.into_inner()) {
-                let mut pa_stream = pa_stream.into_inner();
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_secs(1));
-                    pa_stream.disconnect().ok();
-                });
-            };
-        }
     }
 
     fn get_dur(&self) -> Duration {

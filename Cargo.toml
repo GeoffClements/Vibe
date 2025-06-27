@@ -49,7 +49,7 @@ path = "src/main.rs"
 
 [package.metadata.deb]
 maintainer = "Geoff Clements <ro2kz0@gmail.com>"
-section = "utils"
+section = "universe/sound"
 priority = "optional"
 assets = [
     [
@@ -70,7 +70,7 @@ assets = [
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"
-extended-description = "Turns your computer into a music streamer."
+extended-description = "A music player for the Lyrion Music Server"
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"

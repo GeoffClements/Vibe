@@ -1,10 +1,14 @@
 use crossbeam::channel::{Receiver, Sender};
-use log::{error, info};
+use log::info;
 use slimproto::{
     self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage,
     FramedReader, FramedWriter, ServerMessage,
 };
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    thread::sleep,
+    time::Duration,
+};
 
 pub fn run(
     server_addr: Option<SocketAddrV4>,
@@ -49,12 +53,13 @@ pub fn run(
             caps.add(Capability::Flc);
 
             // Connect to the server
-            info!("Connecting to server: {}", server.socket);
-            let (mut rx, mut tx) = match server.connect() {
-                Ok((rx, tx)) => (rx, tx),
-                Err(_) => {
-                    error!("Error connecting to server");
-                    return;
+            info!("Attempting to connect to server: {}", server.socket);
+            let (mut rx, mut tx) = loop {
+                match server.connect() {
+                    Ok((rx, tx)) => break (rx, tx),
+                    Err(_) => {
+                        sleep(Duration::from_secs(5));
+                    }
                 }
             };
 

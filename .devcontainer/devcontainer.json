@@ -3,13 +3,14 @@
 {
 	"name": "Rust",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	
 	"image": "docker.io/ubuntu:rolling",
-
 	// Features to add to the dev container. More info: https://containers.dev/features.
+	
 	"features": {
 		"ghcr.io/devcontainers/features/rust:1": {}
 	},
-
+	
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -19,21 +20,22 @@
 			]
 		}
 	},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
-
+	
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends libpulse-dev libasound2-dev libdbus-1-dev pkg-config",
-
+	
 	"runArgs": [
-		"--net=host"
-		// "--device=/dev/snd",
-  		// "-e PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native"
-		// "-v ${XDG_RUNTIME_DIR}/pulse/native:${XDG_RUNTIME_DIR}/pulse/native",
-		// "-v ~/.config/pulse/cookie:/root/.config/pulse/cookie"
-	]
-
+		"--network=host",
+		"--device=/dev/snd",
+		"-e",
+		"PULSE_SERVER=unix:${localEnv:XDG_RUNTIME_DIR}/pulse/native",
+		"-v",
+		"${localEnv:XDG_RUNTIME_DIR}/pulse/native:/run/user/1000/pulse/native",
+		"-v",
+		"${localEnv:HOME}/.config/pulse/cookie:/root/.config/pulse/cookie"
+	]   
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"
 }

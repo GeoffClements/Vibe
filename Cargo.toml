@@ -12,8 +12,8 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.98"
-clap = { version = "4.5.40", features = ["derive"] }
+anyhow = "1.0.99"
+clap = { version = "4.5.45", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.1"
 log = "0.4.27"
@@ -21,8 +21,9 @@ notify-rust = { version = "4.11.7", default-features = false, optional = true, f
     "dbus",
 ] }
 pulse = { package = "libpulse-binding", version = "2.30.1", optional = true }
-rodio = { version = "0.20.1", optional = true, default-features = false, features = [
+rodio = { version = "0.21.1", optional = true, default-features = false, features = [
     "crossbeam-channel",
+    "playback",
 ] }
 simple_logger = { version = "5.0.0", default-features = false, features = [
     "stderr",

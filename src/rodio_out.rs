@@ -4,12 +4,15 @@ use anyhow::{self, bail, Context};
 use crossbeam::channel::Sender;
 use log::warn;
 use rodio::{
-    cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamHandle, Sink, Source,
+    cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamBuilder, Sink, Source,
 };
 use slimproto::proto::AutoStart;
 
 use crate::{
-    audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg, StreamParams
+    audio_out::AudioOutput,
+    decode::{Decoder, DecoderError},
+    message::PlayerMsg,
+    StreamParams,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
@@ -42,7 +45,7 @@ impl DecoderSource {
 }
 
 impl Source for DecoderSource {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         match self.frame.len() {
             0 => None,
             len => Some(len),
@@ -114,17 +117,16 @@ impl Iterator for DecoderSource {
 
 struct Stream {
     _output: OutputStream,
-    _handle: OutputStreamHandle,
     sink: Sink,
 }
 
 impl Stream {
-    fn try_from_device(device: &Device) -> anyhow::Result<Self> {
-        let (output, handle) = OutputStream::try_from_device(device)?;
-        let sink = Sink::try_new(&handle)?;
+    fn try_from_device(device: Device) -> anyhow::Result<Self> {
+        let output = OutputStreamBuilder::from_device(device)?.open_stream()?;
+        let sink = Sink::connect_new(&output.mixer());
+        
         Ok(Self {
             _output: output,
-            _handle: handle,
             sink,
         })
     }
@@ -193,7 +195,7 @@ impl AudioOutput for RodioAudioOutput {
         if let Some(ref mut playing_stream) = self.playing {
             playing_stream.play(decoder_source);
         } else {
-            if let Ok(mut stream) = Stream::try_from_device(&self.device) {
+            if let Ok(mut stream) = Stream::try_from_device(self.device.clone()) {
                 stream.play(decoder_source);
                 if !autostart {
                     stream.pause();

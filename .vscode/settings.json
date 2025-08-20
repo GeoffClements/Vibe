@@ -5,6 +5,7 @@
         "notify"
     ],
     "cSpell.words": [
+        "Addrs",
         "adpcm",
         "buildflags",
         "conv",
@@ -31,6 +32,7 @@
         "pipewire",
         "pulseaudio",
         "rodio",
+        "rsplitn",
         "rustup",
         "Setname",
         "sgid",

@@ -1,6 +1,5 @@
 use std::{
-    net::{Ipv4Addr, SocketAddrV4},
-    str::FromStr,
+    net::{Ipv4Addr, SocketAddrV4, ToSocketAddrs},
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
 };
@@ -38,6 +37,7 @@ mod rodio_out;
 struct Cli {
     #[arg(
         short,
+        long,
         name = "SERVER[:PORT]",
         value_parser = cli_server_parser,
         help = "Connect to the specified server, otherwise use autodiscovery")]
@@ -45,15 +45,16 @@ struct Cli {
 
     #[arg(
         short = 'o',
+        long,
         name = "OUTPUT_DEVICE",
         help = "Output device [default: System default device]"
     )]
     device: Option<String>,
 
-    #[arg(short, help = "List output devices")]
+    #[arg(short, long, help = "List output devices")]
     list: bool,
 
-    #[arg(short, default_value = "Vibe", help = "Set the player name")]
+    #[arg(short, long, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
     #[cfg(all(feature = "pulse", feature = "rodio"))]
@@ -76,13 +77,40 @@ struct Cli {
 }
 
 fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
-    match value.split_once(':') {
-        Some((ip_str, port_str)) if port_str.len() == 0 => {
-            Ok(SocketAddrV4::new(Ipv4Addr::from_str(ip_str)?, SLIM_PORT))
-        }
-        Some(_) => Ok(value.parse()?),
-        None => Ok(SocketAddrV4::new(Ipv4Addr::from_str(value)?, SLIM_PORT)),
+    // Try parsing as SocketAddrV4 directly (ip:port or host:port)
+    if let Ok(addr) = value.parse::<SocketAddrV4>() {
+        return Ok(addr);
     }
+
+    // Try parsing as Ipv4Addr (ip only, no port)
+    if let Ok(ip) = value.parse::<Ipv4Addr>() {
+        return Ok(SocketAddrV4::new(ip, SLIM_PORT));
+    }
+
+    // Try parsing as host[:port]
+    let mut parts = value.rsplitn(2, ':');
+    let last = parts.next();
+    let first = parts.next();
+
+    let (host, port) = match (first, last) {
+        (Some(host), Some(port_str)) if port_str.chars().all(|c| c.is_ascii_digit()) => {
+            let port = port_str.parse::<u16>().unwrap_or(SLIM_PORT);
+            (host, port)
+        }
+        (Some(_), Some(_)) => (value, SLIM_PORT),
+        (None, Some(host)) => (host, SLIM_PORT),
+        _ => (value, SLIM_PORT),
+    };
+
+    // Use ToSocketAddrs to resolve host
+    let addrs = (host, port).to_socket_addrs()?;
+    for addr in addrs {
+        if let std::net::SocketAddr::V4(addr_v4) = addr {
+            return Ok(addr_v4);
+        }
+    }
+
+    Err(anyhow::anyhow!("Could not resolve server address"))
 }
 
 pub struct StreamParams {

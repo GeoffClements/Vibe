@@ -31,6 +31,10 @@
 		"apparmor:unconfined"
 	],
 
+	"mounts": [
+		"source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly"
+	],
+
 	"runArgs": [
 		"--network=host",
 		"--device=/dev/snd",

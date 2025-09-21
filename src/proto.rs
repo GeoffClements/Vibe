@@ -5,7 +5,7 @@ use slimproto::{
     FramedReader, FramedWriter, ServerMessage,
 };
 use std::{
-    net::{Ipv4Addr, SocketAddrV4},
+    net::SocketAddrV4,
     thread::sleep,
     time::Duration,
 };
@@ -26,7 +26,7 @@ pub fn run(
 
         slim_rx_in
             .send(Some(ServerMessage::Serv {
-                ip_address: Ipv4Addr::from(*server.socket.ip()),
+                ip_address: (*server.socket.ip()),
                 sync_group_id: None,
             }))
             .ok();
@@ -40,7 +40,7 @@ pub fn run(
             caps.add(Capability::Firmware(env!("CARGO_PKG_VERSION").to_owned()));
             caps.add(Capability::Maxsamplerate(192000));
 
-            if syncgroupid.len() > 0 {
+            if !syncgroupid.is_empty() {
                 info!("Joining sync group: {syncgroupid}");
                 caps.add(Capability::Syncgroupid(syncgroupid.to_owned()));
             }

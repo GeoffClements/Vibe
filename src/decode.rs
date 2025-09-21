@@ -181,7 +181,7 @@ impl Decoder {
         }?;
 
         let decoder = symphonia::default::get_codecs()
-            .make_audio_decoder(&audio_codec_params, &AudioDecoderOptions::default())
+            .make_audio_decoder(audio_codec_params, &AudioDecoderOptions::default())
             .context("Unable to find suitable decoder")?;
 
         Ok(Decoder {
@@ -325,6 +325,7 @@ impl Decoder {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn make_decoder(
     server_ip: Ipv4Addr,
     default_ip: Ipv4Addr,
@@ -393,11 +394,10 @@ pub fn make_decoder(
 
 fn make_connection(ip: Ipv4Addr, port: u16, http_headers: String) -> anyhow::Result<TcpStream> {
     let mut data_stream = TcpStream::connect((ip, port))?;
-    let mut headers = Vec::new();
-    headers.push(http_headers.trim());
+    let headers = http_headers.trim();
     // headers.push("Icy-Metadata: 1");
-    data_stream.write(headers.join("\r\n").as_bytes())?;
-    data_stream.write("\r\n\r\n".as_bytes())?;
+    _ = data_stream.write((format!("{}{}", headers, "\r\n")).as_bytes())?;
+    _ = data_stream.write("\r\n\r\n".as_bytes())?;
     data_stream.flush()?;
     Ok(data_stream)
 }

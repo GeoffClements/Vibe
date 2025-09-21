@@ -369,7 +369,7 @@ impl AudioOutput for PulseAudioOutput {
                     break;
                 }
 
-                if audio_buf.len() > 0 {
+                if !audio_buf.is_empty() {
                     let buf_len = if audio_buf.len() < len {
                         audio_buf.len()
                     } else {
@@ -391,7 +391,7 @@ impl AudioOutput for PulseAudioOutput {
                     }
                 }
 
-                if draining && audio_buf.len() == 0 {
+                if draining && audio_buf.is_empty() {
                     *drained_ref.borrow_mut() = true;
                 }
             }));

@@ -33,7 +33,7 @@ pub fn notify(metadata: MetadataRevision) {
                             .filter(|p| p.len() == 4)
                             .take(1)
                             .collect();
-                        if year.len() > 0 {
+                        if !year.is_empty() {
                             tags.insert("year", year);
                         }
                     }

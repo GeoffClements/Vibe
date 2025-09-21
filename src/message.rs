@@ -29,6 +29,7 @@ pub enum PlayerMsg {
     Decoder((decode::Decoder, StreamParams)),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_slim_msg(
     output: &mut Option<Box<dyn AudioOutput>>,
     msg: ServerMessage,
@@ -145,14 +146,12 @@ pub fn process_slim_msg(
                             slim_tx_in.send(msg).ok();
                         }
                     }
-                } else {
-                    if output.pause() {
-                        let stream_in = stream_in.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(interval);
-                            stream_in.send(PlayerMsg::Unpause).ok();
-                        });
-                    }
+                } else if output.pause() {
+                    let stream_in = stream_in.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(interval);
+                        stream_in.send(PlayerMsg::Unpause).ok();
+                    });
                 }
             }
         }
@@ -226,7 +225,7 @@ pub fn process_slim_msg(
                     }
 
                     let stream_in_r = stream_in.clone();
-                    let default_ip = server_default_ip.clone();
+                    let default_ip = *server_default_ip;
                     std::thread::spawn(move || {
                         match decode::make_decoder(
                             server_ip,

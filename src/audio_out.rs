@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use anyhow;
 use crossbeam::channel::Sender;
 
 use crate::{decode::Decoder, message::PlayerMsg, StreamParams};

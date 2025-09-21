@@ -101,7 +101,7 @@ impl Iterator for DecoderSource {
                     }
                 }
 
-                if audio_buf.len() > 0 {
+                if !audio_buf.is_empty() {
                     self.frame.extend(audio_buf);
                 }
                 break;
@@ -123,7 +123,7 @@ struct Stream {
 impl Stream {
     fn try_from_device(device: Device) -> anyhow::Result<Self> {
         let output = OutputStreamBuilder::from_device(device)?.open_stream()?;
-        let sink = Sink::connect_new(&output.mixer());
+        let sink = Sink::connect_new(output.mixer());
         
         Ok(Self {
             _output: output,
@@ -158,7 +158,7 @@ impl RodioAudioOutput {
     pub fn try_new(device_name: &Option<String>) -> anyhow::Result<Self> {
         let host = rodio::cpal::default_host();
         let device = if let Some(dev_name) = device_name {
-            match find_device(&host, &dev_name) {
+            match find_device(&host, dev_name) {
                 Some(device) => device,
                 None => {
                     bail!("Cannot find device: {dev_name}");
@@ -194,14 +194,12 @@ impl AudioOutput for RodioAudioOutput {
 
         if let Some(ref mut playing_stream) = self.playing {
             playing_stream.play(decoder_source);
-        } else {
-            if let Ok(mut stream) = Stream::try_from_device(self.device.clone()) {
-                stream.play(decoder_source);
-                if !autostart {
-                    stream.pause();
-                }
-                self.playing = Some(stream);
+        } else if let Ok(mut stream) = Stream::try_from_device(self.device.clone()) {
+            stream.play(decoder_source);
+            if !autostart {
+                stream.pause();
             }
+            self.playing = Some(stream);
         }
     }
 

@@ -23,6 +23,7 @@
         "libdbus",
         "libpulse",
         "loglevel",
+        "Lyrion",
         "Mainloop",
         "Maxsamplerate",
         "NOFLAGS",

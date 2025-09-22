@@ -9,14 +9,39 @@ homepage = "https://github.com/GeoffClements/Vibe"
 categories = ["command-line-utilities", "multimedia::audio"]
 keywords = ["lyrion", "audio", "slim", "music"]
 readme = "README.md"
-authors = ["Geoff Clements <ro2kz0@gmail.com>"]
+# authors = ["Geoff Clements <ro2kz0@gmail.com>"]
+
+[package.metadata.deb]
+maintainer = "Geoff Clements <ro2kz0@gmail.com>"
+section = "universe/sound"
+priority = "optional"
+assets = [
+    [
+        "target/release/vibe",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "README.md",
+        "/usr/share/doc/vibe-player/README.md",
+        "644",
+    ],
+    [
+        "resources/vibe.service",
+        "/usr/share/doc/vibe-player/resources/vibe.service",
+        "644",
+    ],
+]
+features = ["notify"]
+maintainer-scripts = "debian/"
+extended-description = "A music player for the Lyrion Music Server"
 
 [dependencies]
-anyhow = "1.0.99"
-clap = { version = "4.5.45", features = ["derive"] }
+anyhow = "1.0.100"
+clap = { version = "4.5.48", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.1"
-log = "0.4.27"
+log = "0.4.28"
 notify-rust = { version = "4.11.7", default-features = false, optional = true, features = [
     "dbus",
 ] }
@@ -48,30 +73,6 @@ rodio = ["dep:rodio"]
 name = "vibe"
 path = "src/main.rs"
 
-[package.metadata.deb]
-maintainer = "Geoff Clements <ro2kz0@gmail.com>"
-section = "universe/sound"
-priority = "optional"
-assets = [
-    [
-        "target/release/vibe",
-        "/usr/bin/",
-        "755",
-    ],
-    [
-        "README.md",
-        "/usr/share/doc/vibe-player/README.md",
-        "644",
-    ],
-    [
-        "resources/vibe.service",
-        "/usr/share/doc/vibe-player/resources/vibe.service",
-        "644",
-    ],
-]
-features = ["notify"]
-maintainer-scripts = "debian/"
-extended-description = "A music player for the Lyrion Music Server"
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"

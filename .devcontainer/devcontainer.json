@@ -16,7 +16,8 @@
 			"extensions": [
 				"fill-labs.dependi",
 				"streetsidesoftware.code-spell-checker",
-				"streetsidesoftware.code-spell-checker-british-english"
+				"streetsidesoftware.code-spell-checker-british-english",
+				"tombi-toml.tombi"
 			],
 			"settings": {
 				"rust-analyzer.check.command": "clippy"

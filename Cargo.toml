@@ -13,6 +13,7 @@ readme = "README.md"
 
 [package.metadata.deb]
 maintainer = "Geoff Clements <ro2kz0@gmail.com>"
+copyright = "2020-2025 Geoff Clements"
 section = "universe/sound"
 priority = "optional"
 assets = [
@@ -24,11 +25,6 @@ assets = [
     [
         "README.md",
         "/usr/share/doc/vibe-player/README.md",
-        "644",
-    ],
-    [
-        "resources/vibe.service",
-        "/usr/share/doc/vibe-player/resources/vibe.service",
         "644",
     ],
 ]

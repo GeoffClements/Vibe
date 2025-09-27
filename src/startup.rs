@@ -13,7 +13,8 @@ ExecStart={path}{server}
 Restart=on-failure
 
 [Install]
-WantedBy=default.target"#;
+WantedBy=default.target
+"#;
 
     let mut out_str = if let Some(server) = server {
         out_str_static.replace("{server}", &format!(" --server {}", server))

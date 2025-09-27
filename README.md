@@ -31,20 +31,19 @@ To see all audio output devices on your machine:
 vibe -l
 ```
 
-There is a systemd service file in the resources directory
-which you can adapt to your needs as follows:
-
-Copy the systemd service file to `~/.config/systemd/user/`.
-If you installed via the deb package you can leave this 
-file unchanged. If you compiled Vibe yourself then you will
-need to edit the line beginning with `ExecStart=` so that it 
-points to the `vibe` executable.
-
-Tell systemd of the new service with
+## Automatic starting at login
+Vibe can create a systemd user service file for you using
+```bash
+vibe --create-startup [<server>]
+```
+This will create a systemd service file under
+`${HOME}/.config/systemd/user`. You can nominate
+a Lyrion server to be used by this service, or it can
+be omitted to use autodiscovery. Once created,
+tell systemd of the new service with
 ```bash
 systemctl --user daemon-reload
 ```
-You only need to do this once.
 
 Start the service with
 ```bash

@@ -4,3 +4,5 @@ sudo apt-get install -y --no-install-recommends \
     libasound2-dev \
     libdbus-1-dev \
     pkg-config
+
+cargo install cargo-deb

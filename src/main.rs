@@ -31,6 +31,7 @@ mod proto;
 mod pulse_out;
 #[cfg(feature = "rodio")]
 mod rodio_out;
+mod startup;
 
 #[derive(Parser)]
 #[command(name = "Vibe", author, version, about, long_about = None)]
@@ -67,6 +68,9 @@ struct Cli {
     #[cfg(feature = "notify")]
     #[arg(long, short = 'q', help = "Do not use desktop notifications")]
     quiet: bool,
+
+    #[arg(long, value_name = "SERVER")]
+    create_startup: Option<Option<String>>,
 
     #[arg(long,
         default_value = "off",
@@ -127,6 +131,17 @@ fn main() -> anyhow::Result<()> {
         .with_colors(true)
         .with_level(cli.loglevel)
         .init()?;
+
+    // Create a systemd unit file if requested
+    if let Some(ref maybe_server) = cli.create_startup {
+        if let Some(server) = maybe_server {
+            _ = cli_server_parser(server)?
+        }
+
+        startup::create_systemd_unit(maybe_server)?;
+
+        return Ok(());
+    }
 
     #[cfg(all(feature = "pulse", feature = "rodio"))]
     let output_system = cli.system.as_str();

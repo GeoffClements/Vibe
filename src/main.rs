@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Context;
 use clap::{
     builder::{PossibleValuesParser, TypedValueParser},
     Parser,
@@ -135,7 +136,7 @@ fn main() -> anyhow::Result<()> {
     // Create a systemd unit file if requested
     if let Some(ref maybe_server) = cli.create_startup {
         if let Some(server) = maybe_server {
-            _ = cli_server_parser(server)?
+            _ = cli_server_parser(server).context(format!("Server not found: {}", server))?
         }
 
         startup::create_systemd_unit(maybe_server)?;

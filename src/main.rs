@@ -70,7 +70,7 @@ struct Cli {
     #[arg(long, short = 'q', help = "Do not use desktop notifications")]
     quiet: bool,
 
-    #[arg(long, value_name = "SERVER")]
+    #[arg(long, value_name = "SERVER", help = "Create a systemd user service file")]
     create_startup: Option<Option<String>>,
 
     #[arg(long,

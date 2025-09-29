@@ -41,9 +41,9 @@ struct Cli {
         short,
         long,
         name = "SERVER[:PORT]",
-        value_parser = cli_server_parser,
+        // value_parser = cli_server_parser,
         help = "Connect to the specified server, otherwise use autodiscovery")]
-    server: Option<SocketAddrV4>,
+    server: Option<String>,
 
     #[arg(
         short = 'o',
@@ -70,8 +70,8 @@ struct Cli {
     #[arg(long, short = 'q', help = "Do not use desktop notifications")]
     quiet: bool,
 
-    #[arg(long, value_name = "SERVER", help = "Create a systemd user service file")]
-    create_startup: Option<Option<String>>,
+    #[arg(long, help = "Create a systemd user service file")]
+    create_service: bool,
 
     #[arg(long,
         default_value = "off",
@@ -134,12 +134,12 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     // Create a systemd unit file if requested
-    if let Some(ref maybe_server) = cli.create_startup {
-        if let Some(server) = maybe_server {
+    if cli.create_service {
+        if let Some(ref server) = cli.server {
             _ = cli_server_parser(server).context(format!("Server not found: {}", server))?
         }
 
-        startup::create_systemd_unit(maybe_server)?;
+        startup::create_systemd_unit(&cli.server)?;
 
         return Ok(());
     }
@@ -179,6 +179,14 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // If a server was specified, parse it now
+    let cli_server = if let Some(ref server) = cli.server {
+        Some(cli_server_parser(server).context(format!("Server not found: {}", server))?)
+    } else {
+        None
+    };
+
+    // Main loop - if we lose the server connection, we restart everything
     loop {
         let name = {
             let name = match hostname::get().map(|s| s.into_string()) {
@@ -191,11 +199,11 @@ fn main() -> anyhow::Result<()> {
         // Start the slim protocol threads
         let status = Arc::new(Mutex::new(StatusData::default()));
         let start_time = Instant::now();
-        let mut server_default_ip = *cli.server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
+        let mut server_default_ip = *cli_server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
         let skip = Arc::new(AtomicCell::new(Duration::ZERO));
         let (slim_tx_in, slim_tx_out) = bounded(1);
         let (slim_rx_in, slim_rx_out) = bounded(1);
-        proto::run(cli.server, slim_rx_in.clone(), slim_tx_out.clone());
+        proto::run(cli_server, slim_rx_in.clone(), slim_tx_out.clone());
 
         let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
         let (stream_in, stream_out) = bounded(10);

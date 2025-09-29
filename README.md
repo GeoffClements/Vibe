@@ -33,13 +33,18 @@ vibe -l
 
 ## Automatic starting at login
 Vibe can create a systemd user service file for you using
-```bash
-vibe --create-startup [<server>]
 ```
+vibe --create-service
+```
+
+If you want a Lyrion server to be specified in the service
+file then just use the `--server` option, e.g.
+```
+vibe --create-service --server my.lyrion.server
+```
+
 This will create a systemd service file under
-`${HOME}/.config/systemd/user`. You can nominate
-a Lyrion server to be used by this service, or it can
-be omitted to use autodiscovery. Once created,
+`${HOME}/.config/systemd/user`. Once created,
 tell systemd of the new service with
 ```bash
 systemctl --user daemon-reload

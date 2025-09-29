@@ -6,10 +6,6 @@ const OUT_STR_STATIC: &str = r#"[Unit]
 Description=A music player for the Lyrion Music Server
 After=network-online.target sound.target
 
-let out_str_static = r#"[Unit]
-Description=A music player for the Lyrion Music Server
-After=network-online.target sound.target
-
 [Service]
 Type=simple
 ExecStart={path}{server}

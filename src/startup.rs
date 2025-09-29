@@ -2,8 +2,11 @@ use std::fs::{create_dir_all, write};
 
 use which::which;
 
-pub fn create_systemd_unit(server: &Option<String>) -> anyhow::Result<()> {
-    let out_str_static = r#"[Unit]
+const OUT_STR_STATIC: &str = r#"[Unit]
+Description=A music player for the Lyrion Music Server
+After=network-online.target sound.target
+
+let out_str_static = r#"[Unit]
 Description=A music player for the Lyrion Music Server
 After=network-online.target sound.target
 
@@ -16,10 +19,11 @@ Restart=on-failure
 WantedBy=default.target
 "#;
 
+pub fn create_systemd_unit(server: &Option<String>) -> anyhow::Result<()> {
     let mut out_str = if let Some(server) = server {
-        out_str_static.replace("{server}", &format!(" --server {}", server))
+        OUT_STR_STATIC.replace("{server}", &format!(" --server {}", server))
     } else {
-        out_str_static.replace("{server}", "")
+        OUT_STR_STATIC.replace("{server}", "")
     };
 
     let path = which("vibe")?;

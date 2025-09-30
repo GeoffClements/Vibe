@@ -2,7 +2,7 @@ use std::fs::{create_dir_all, write};
 
 use which::which;
 
-const OUT_STR_STATIC: &str = r#"[Unit]
+const SERVICE_FILE_TEXT: &str = r#"[Unit]
 Description=A music player for the Lyrion Music Server
 After=network-online.target sound.target
 
@@ -15,11 +15,13 @@ Restart=on-failure
 WantedBy=default.target
 "#;
 
+const SERVICE_FILE_NAME: &str = "vibe.service";
+
 pub fn create_systemd_unit(server: &Option<String>) -> anyhow::Result<()> {
     let mut out_str = if let Some(server) = server {
-        OUT_STR_STATIC.replace("{server}", &format!(" --server {}", server))
+        SERVICE_FILE_TEXT.replace("{server}", &format!(" --server {}", server))
     } else {
-        OUT_STR_STATIC.replace("{server}", "")
+        SERVICE_FILE_TEXT.replace("{server}", "")
     };
 
     let path = which("vibe")?;
@@ -31,13 +33,13 @@ pub fn create_systemd_unit(server: &Option<String>) -> anyhow::Result<()> {
 
     create_dir_all(&config_dir)?;
 
-    let unit_file = config_dir.join("vibe.service");
+    let unit_file = config_dir.join(SERVICE_FILE_NAME);
     write(&unit_file, out_str)?;
 
     println!("Successfully installed systemd service to: {}", unit_file.to_string_lossy());
 	println!("To enable and start the service, run:");
 	println!("  systemctl --user daemon-reload");
-	println!("  systemctl --user enable --now vibe.service");
+	println!("  systemctl --user enable --now {}", SERVICE_FILE_NAME);
 
     Ok(())
 }

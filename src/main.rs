@@ -139,7 +139,7 @@ fn main() -> anyhow::Result<()> {
             _ = cli_server_parser(server).context(format!("Server not found: {}", server))?
         }
 
-        startup::create_systemd_unit(&cli.server)?;
+        startup::create_systemd_unit(&cli.server, &cli.device)?;
 
         return Ok(());
     }

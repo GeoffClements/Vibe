@@ -9,16 +9,24 @@
 
 ## About
 Vibe is a music player that uses the [SLIM TCP protocol][`slimtcp`] to 
-connect to a [Lyrion Music Server][`lms`] formally known as a
+connect to a [Lyrion Music Server][`lms`], formally known as a
 Logitech Media Server.
 
 Vibe is intended to be run as a user daemon and designed to be simple and
-as unobtrusive as possible.
+as unobtrusive as possible. It's possible to start Vibe at login
+using a systemd service file and this can be generated automatically.
 
-I use Vibe as my daily driver, so it gets lots of use by me and I fix
-bugs as I find them, but this is on a linux system and using the 
-`pulseaudio` output. For anything else, I rely on bug reports but
-I'm limited to testing on a Linux system only.
+It's possible to use auto-discovery to find the Lyrion Music Server
+or, in cases where this is not possible, like when using a `tailscale` VPN,
+then a server can be specified either by its domain name ot it IP address.
+
+The output device can be selected, in this case it's helpful to list 
+the devices first and use the appropriate device name from the list.
+
+Desktop notifications can be displayed when a new track starts,
+although this needs to be enabled at compile time. Please note that
+the Lyrion Music Server does not send metadata for mp3 streams,
+and so no notifications will be produced when playing an mp3.
 
 ## Running
 To list the run-time options:
@@ -137,7 +145,7 @@ Vibe runs on coffee!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V719WYF6)
 
 
-[`slimtcp`]: https://wiki.slimdevices.com/index.php/SlimProto_TCP_protocol
+[`slimtcp`]: https://lyrion.org/reference/slimproto-protocol/
 [`lms`]: https://lyrion.org/
 [`squeezelite`]: https://github.com/ralph-irving/squeezelite
 [`symphonia`]: https://crates.io/crates/symphonia

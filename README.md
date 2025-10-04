@@ -18,7 +18,7 @@ using a systemd service file and this can be generated automatically.
 
 It's possible to use auto-discovery to find the Lyrion Music Server
 or, in cases where this is not possible, like when using a `tailscale` VPN,
-then a server can be specified either by its domain name ot it IP address.
+then a server can be specified either by its domain name or its IP address.
 
 The output device can be selected, in this case it's helpful to list 
 the devices first and use the appropriate device name from the list.

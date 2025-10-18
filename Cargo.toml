@@ -12,11 +12,11 @@ readme = "README.md"
 authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [dependencies]
-anyhow = "1.0.99"
-clap = { version = "4.5.45", features = ["derive"] }
+anyhow = "1.0.100"
+clap = { version = "4.5.49", features = ["derive"] }
 crossbeam = "0.8.4"
 hostname = "0.4.1"
-log = "0.4.27"
+log = "0.4.28"
 notify-rust = { version = "4.11.7", default-features = false, optional = true, features = [
     "dbus",
 ] }
@@ -25,12 +25,12 @@ rodio = { version = "0.21.1", optional = true, default-features = false, feature
     "crossbeam-channel",
     "playback",
 ] }
-simple_logger = { version = "5.0.0", default-features = false, features = [
+simple_logger = { version = "5.1.0", default-features = false, features = [
     "stderr",
     "colors",
 ] }
 slimproto = "0.1.25"
-symphonia = { version = "0.5.4", features = ["all-codecs", "all-formats"] }
+symphonia = { version = "0.5.5", features = ["all-codecs", "all-formats"] }
 
 [profile.dev.package."symphonia"]
 opt-level = 3

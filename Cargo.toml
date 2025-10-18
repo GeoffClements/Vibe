@@ -1,6 +1,6 @@
 [package]
 name = "Vibe_Player"
-version = "0.5.4"
+version = "0.5.5"
 edition = "2021"
 description = "A music player for the Lyrion Music Server"
 license = "MIT"

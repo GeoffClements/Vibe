@@ -13,7 +13,7 @@ readme = "README.md"
 
 [package.metadata.deb]
 maintainer = "Geoff Clements <ro2kz0@gmail.com>"
-copyright = "2020-2025 Geoff Clements"
+copyright = "2025, Geoff Clements <ro2kz0@gmail.com>"
 section = "universe/sound"
 priority = "optional"
 assets = [

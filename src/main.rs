@@ -212,7 +212,13 @@ fn main() -> anyhow::Result<()> {
         let stream_idx = select.recv(&stream_out);
 
         loop {
-            match select.select_timeout(Duration::from_secs(1)) {
+            let timeout = if output.is_some() {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_secs(5)
+            };
+
+            match select.select_timeout(timeout) {
                 Ok(op) if op.index() == slim_idx => match op.recv(&slim_rx_out)? {
                     Some(msg) => process_slim_msg(
                         &mut output,

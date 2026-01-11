@@ -1,3 +1,9 @@
+// src/pulse_out.rs
+// PulseAudio audio output implementation
+//
+// Required system dependencies:
+// - PulseAudio development libraries (libpulse-dev on Debian-based systems)
+
 use std::{cell::RefCell, ops::Deref, rc::Rc, time::Duration};
 
 use anyhow::anyhow;

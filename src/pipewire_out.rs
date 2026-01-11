@@ -1,3 +1,11 @@
+// src/pipewire_out.rs
+// Pipewire audio output implementation
+//
+// Required system dependencies:
+// - Pipewire development libraries (libpipewire-0.3-dev on Debian-based systems)
+// - SPA development libraries (libspa-0.2-dev on Debian-based systems)
+// - clang development libraries (libclang-dev on Debian-based systems)
+
 use std::time::Duration;
 
 use crossbeam::channel::{bounded, Sender};

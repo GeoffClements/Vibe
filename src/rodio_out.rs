@@ -1,3 +1,9 @@
+// src/rodio_out.rs
+// Rodio audio output implementation
+//
+// Required system dependencies:
+// - ALSA development libraries (libasound2-dev on Debian-based systems)
+
 use std::{collections::VecDeque, time::Duration};
 
 use anyhow::{self, bail, Context};

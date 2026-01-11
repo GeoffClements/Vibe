@@ -1,31 +1,26 @@
 use std::time::Duration;
 
 use crossbeam::channel::{bounded, Sender};
-use pipewire::{
-    context::{self, ContextBox},
-    core::CoreBox,
-    thread_loop::ThreadLoopBox,
-    types::ObjectType,
-};
+use pipewire::{context::ContextRc, core::CoreRc, thread_loop::ThreadLoopRc, types::ObjectType};
 
 use crate::{audio_out::AudioOutput, decode::Decoder, message::PlayerMsg, StreamParams};
 
 pub struct PipewireAudioOutput {
-    mainloop: ThreadLoopBox,
-    // context: ContextBox<'l>,
-    // core: CoreBox<'l>,
+    mainloop: ThreadLoopRc,
+    _context: ContextRc,
+    core: CoreRc,
 }
 
 impl PipewireAudioOutput {
     pub fn try_new() -> anyhow::Result<Self> {
-        let mainloop = unsafe { ThreadLoopBox::new(None, None) }?;
-        // let context = ContextBox::new(mainloop.loop_(), None)?;
-        // let core = context.connect(None)?;
+        let mainloop = unsafe { ThreadLoopRc::new(None, None) }?;
+        let context = ContextRc::new(&mainloop, None)?;
+        let core = context.connect_rc(None)?;
 
         Ok(Self {
-            mainloop: mainloop,
-            // context: context,
-            // core: core,
+            mainloop,
+            _context: context,
+            core,
         })
     }
 }
@@ -33,10 +28,10 @@ impl PipewireAudioOutput {
 impl AudioOutput for PipewireAudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        decoder: Decoder,
-        stream_in: Sender<PlayerMsg>,
-        stream_params: StreamParams,
-        device: &Option<String>,
+        _decoder: Decoder,
+        _stream_in: Sender<PlayerMsg>,
+        _stream_params: StreamParams,
+        _device: &Option<String>,
     ) {
         todo!()
     }
@@ -66,9 +61,7 @@ impl AudioOutput for PipewireAudioOutput {
     }
 
     fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
-        let context = ContextBox::new(self.mainloop.loop_(), None)?;
-        let core = context.connect(None)?;
-        let registry = core.get_registry()?;
+        let registry = self.core.get_registry()?;
 
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
@@ -79,15 +72,9 @@ impl AudioOutput for PipewireAudioOutput {
                 if global.type_ == ObjectType::Node {
                     if let Some(props) = global.props {
                         if props.get("media.class") == Some("Audio/Sink") {
-                            // if media_class.starts_with("Audio/Sink") {
-                            // for key in props.keys() {
-                            //     println!("    {} = {:?}", key, props.get(key));
-                            // }
-                            // println!("----");
                             let device_name = props.get("node.name").unwrap_or_default().to_owned();
                             let device_desc = props.get("node.description").map(|s| s.to_owned());
                             let _ = s.send((device_name, device_desc));
-                            // }
                         }
                     }
                 }

@@ -6,6 +6,8 @@ use crate::{decode::Decoder, message::PlayerMsg, StreamParams};
 
 #[cfg(feature = "pulse")]
 use crate::pulse_out::PulseAudioOutput;
+#[cfg(feature = "pipewire")]
+use crate::pipewire_out::PipewireAudioOutput;
 #[cfg(feature = "rodio")]
 use crate::rodio_out::RodioAudioOutput;
 
@@ -40,6 +42,8 @@ pub fn make_audio_output(
     Ok(match system {
         #[cfg(feature = "pulse")]
         "pulse" => Box::new(PulseAudioOutput::try_new()?),
+        #[cfg(feature = "pipewire")]
+        "pipewire" => Box::new(PipewireAudioOutput::try_new()?),
         #[cfg(feature = "rodio")]
         "rodio" => Box::new(RodioAudioOutput::try_new(device)?),
         _ => unreachable!(),

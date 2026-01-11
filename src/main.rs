@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Context;
+use cfg_if::cfg_if;
 use clap::{
     builder::{PossibleValuesParser, TypedValueParser},
     Parser,
@@ -27,6 +28,8 @@ mod decode;
 mod message;
 #[cfg(feature = "notify")]
 mod notify;
+#[cfg(feature = "pipewire")]
+mod pipewire_out;
 mod proto;
 #[cfg(feature = "pulse")]
 mod pulse_out;
@@ -59,9 +62,12 @@ struct Cli {
     #[arg(short, long, default_value = "Vibe", help = "Set the player name")]
     name: String,
 
-    #[cfg(all(feature = "pulse", feature = "rodio"))]
-    #[arg(long, short = 'a', default_value = "pulse", value_parser = PossibleValuesParser::new([
-        "pulse", "rodio" ]),
+    #[cfg(any(
+        all(feature = "pulse", feature = "rodio"),
+        all(feature = "pulse", feature = "pipewire"),
+        all(feature = "rodio", feature = "pipewire")
+    ))]
+    #[arg(long, short = 'a', default_value_t = cli_default_system(), value_parser = cli_system_list(),
         help = "Which audio system to use"
     )]
     system: String,
@@ -118,6 +124,35 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
     Err(anyhow::anyhow!("Could not resolve server address"))
 }
 
+fn cli_default_system() -> String {
+    cfg_if! {
+        if #[cfg(feature = "pulse")] {
+            "pulse".to_string()
+        } else if #[cfg(feature = "pipewire")] {
+            "pipewire".to_string()
+        } else {
+            "rodio".to_string()
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn cli_system_list() -> PossibleValuesParser {
+    cfg_if! {
+        if #[cfg(all(feature = "pulse", feature = "pipewire", feature = "rodio"))] {
+            PossibleValuesParser::new(["pulse", "pipewire", "rodio"])
+        } else if #[cfg(all(feature = "pulse", feature = "pipewire"))] {
+            PossibleValuesParser::new(["pulse", "pipewire"])
+        } else if #[cfg(all(feature = "pulse", feature = "rodio"))] {
+            PossibleValuesParser::new(["pulse", "rodio"])
+        } else if #[cfg(all(feature = "rodio", feature = "pipewire"))] {
+            PossibleValuesParser::new(["pipewire", "rodio"])
+        } else {
+            PossibleValuesParser::new([""])
+        }
+    }
+}
+
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
@@ -144,18 +179,26 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    #[cfg(all(feature = "pulse", feature = "rodio"))]
-    let output_system = cli.system.as_str();
-    #[cfg(all(feature = "pulse", not(feature = "rodio")))]
-    let output_system = "pulse";
-    #[cfg(all(not(feature = "pulse"), feature = "rodio"))]
-    let output_system = "rodio";
+    let output_system = {
+        cfg_if! {
+            if #[cfg(any(
+                all(feature = "pulse", feature = "rodio"),
+                all(feature = "pulse", feature = "pipewire"),
+                all(feature = "rodio", feature = "pipewire")
+            ))] {
+                let sys = cli.system;
+            } else {
+                let sys = cli_default_system();
+            }
+        };
+        sys
+    };
     let mut output = None;
 
     // List the output devices and terminate
     if cli.list {
         if let Ok(output) = audio_out::make_audio_output(
-            output_system,
+            &output_system,
             #[cfg(feature = "rodio")]
             &cli.device,
         ) {
@@ -231,7 +274,7 @@ fn main() -> anyhow::Result<()> {
                         stream_in.clone(),
                         skip.clone(),
                         &start_time,
-                        output_system,
+                        &output_system,
                         #[cfg(feature = "rodio")]
                         &cli.device,
                     )?,

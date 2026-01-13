@@ -273,7 +273,7 @@ impl Decoder {
         Ok(())
     }
 
-    #[cfg(feature = "pulse")]
+    #[cfg(any(feature = "pulse", feature = "pipewire"))]
     pub fn fill_raw_buffer(
         &mut self,
         buffer: &mut Vec<u8>,

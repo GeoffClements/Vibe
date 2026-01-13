@@ -72,6 +72,7 @@ impl PipewireAudioOutput {
 
     fn play(&mut self) -> bool {
         if let Some(ref mut stream) = self.playing {
+            let _pw_lock = self.mainloop.lock();
             stream.0.set_active(true).is_ok()
         } else {
             false
@@ -117,6 +118,7 @@ impl AudioOutput for PipewireAudioOutput {
             break;
         }
 
+        let pw_lock = self.mainloop.lock();
         let stream = match StreamRc::new(
             self.core.clone(),
             "Vibe",
@@ -137,7 +139,9 @@ impl AudioOutput for PipewireAudioOutput {
         let mut start_flag = true;
         let mut draining = false;
         let stream_in_ref = stream_in.clone();
+        let channels = decoder.channels();
         let on_process = move |stream: &Stream, _data: &mut _| {
+            // info!("Pipewire stream process callback triggered");
             if start_flag {
                 let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
                 start_flag = false;
@@ -168,10 +172,18 @@ impl AudioOutput for PipewireAudioOutput {
             }
 
             if !audio_buf.is_empty() {
+                // info!("Filling Pipewire buffer with {} bytes", audio_buf.len());
                 if let Some(mut pw_buf) = stream.dequeue_buffer() {
-                    if let Some(buf_data) = pw_buf.datas_mut()[0].data() {
+                    let data = &mut pw_buf.datas_mut()[0];
+                    if let Some(buf_data) = data.data() {
                         let len = buf_data.len().min(audio_buf.len());
-                        buf_data.copy_from_slice(&audio_buf.drain(..len).collect::<Vec<u8>>());
+                        buf_data[..len]
+                            .copy_from_slice(&audio_buf.drain(..len).collect::<Vec<u8>>());
+                        
+                        let chunk = data.chunk_mut();
+                        *chunk.offset_mut() = 0;
+                        *chunk.stride_mut() = (size_of::<f32>() * channels as usize) as _;
+                        *chunk.size_mut() = len as _;
                     }
                 }
             }
@@ -198,7 +210,31 @@ impl AudioOutput for PipewireAudioOutput {
         };
 
         let pw_flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::INACTIVE;
-        let mut params = [];
+
+        let mut audio_info = pipewire::spa::param::audio::AudioInfoRaw::new();
+        audio_info.set_format(pipewire::spa::param::audio::AudioFormat::F32LE);
+        audio_info.set_rate(44100);
+        audio_info.set_channels(2);
+        let mut position = [0; pipewire::spa::param::audio::MAX_CHANNELS];
+        position[0] = pipewire::spa::sys::SPA_AUDIO_CHANNEL_FL;
+        position[1] = pipewire::spa::sys::SPA_AUDIO_CHANNEL_FR;
+        audio_info.set_position(position);
+
+        let values: Vec<u8> = pipewire::spa::pod::serialize::PodSerializer::serialize(
+            std::io::Cursor::new(Vec::new()),
+            &pipewire::spa::pod::Value::Object(pipewire::spa::pod::Object {
+                type_: pipewire::spa::sys::SPA_TYPE_OBJECT_Format,
+                id: pipewire::spa::sys::SPA_PARAM_EnumFormat,
+                properties: audio_info.into(),
+            }),
+        )
+        .unwrap()
+        .0
+        .into_inner();
+
+        let mut params = [pipewire::spa::pod::Pod::from_bytes(&values).unwrap()];
+
+        // let mut params = [];
         if stream
             .connect(Direction::Output, None, pw_flags, &mut params)
             .is_err()
@@ -206,6 +242,7 @@ impl AudioOutput for PipewireAudioOutput {
             let _ = stream_in.send(PlayerMsg::NotSupported);
             return;
         }
+        drop(pw_lock);
 
         let _ = stream_in.send(PlayerMsg::StreamEstablished);
         self.enqueue(

@@ -282,17 +282,21 @@ impl Decoder {
     ) -> Result<(), DecoderError> {
         let limit = limit.unwrap_or_else(|| {
             if buffer.capacity() > 0 {
-                buffer.capacity()
+                buffer.capacity() / 2
             } else {
                 1024
             }
         });
 
+        if limit > buffer.capacity() {
+            buffer.reserve(limit - buffer.capacity());
+        }
+
         while buffer.len() < limit {
             let audio_buffer: Vec<_> = self
                 .get_audio_buffer(volume.clone())?
                 .iter()
-                .flat_map(|s| s.to_ne_bytes())
+                .flat_map(|s| s.to_le_bytes())
                 .collect();
 
             buffer.extend_from_slice(&audio_buffer[..]);

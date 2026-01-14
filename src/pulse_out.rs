@@ -41,7 +41,7 @@ impl Stream {
             format: match decoder.format() {
                 AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
                 AudioFormat::I32 | AudioFormat::U32 => pulse::sample::Format::S32NE,
-                AudioFormat::F32 => pulse::sample::Format::FLOAT32NE,
+                AudioFormat::F32 => pulse::sample::Format::F32le,
             },
             rate: decoder.sample_rate(),
             channels: decoder.channels(),

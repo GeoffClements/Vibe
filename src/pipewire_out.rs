@@ -6,15 +6,22 @@
 // - SPA development libraries (libspa-0.2-dev on Debian-based systems)
 // - clang development libraries (libclang-dev on Debian-based systems)
 
-use std::time::Duration;
+use std::{io::Cursor, sync::Arc, time::Duration};
 
-use crossbeam::channel::{bounded, Sender};
+use crossbeam::{
+    atomic::AtomicCell,
+    channel::{bounded, Sender},
+};
 use log::{info, warn};
 use pipewire::{
     context::ContextRc,
     core::CoreRc,
     properties::properties,
-    spa::utils::Direction,
+    spa::{
+        param::audio::{AudioFormat, AudioInfoRaw},
+        pod::{serialize::PodSerializer, Pod},
+        utils::Direction,
+    },
     stream::{Stream, StreamFlags, StreamListener, StreamRc, StreamState},
     thread_loop::ThreadLoopRc,
     types::ObjectType,
@@ -35,6 +42,7 @@ pub struct PipewireAudioOutput {
     core: CoreRc,
     playing: Option<(StreamRc, StreamListener<usize>)>,
     next_up: Option<(StreamRc, StreamListener<usize>)>,
+    duration: Arc<AtomicCell<u64>>, // in milliseconds
 }
 
 impl PipewireAudioOutput {
@@ -51,6 +59,7 @@ impl PipewireAudioOutput {
             core,
             playing: None,
             next_up: None,
+            duration: Arc::new(AtomicCell::new(0)),
         })
     }
 
@@ -102,7 +111,7 @@ impl AudioOutput for PipewireAudioOutput {
                 Ok(()) => {}
 
                 Err(DecoderError::EndOfDecode) => {
-                    stream_in.send(PlayerMsg::EndOfDecode).ok();
+                    let _ = stream_in.send(PlayerMsg::EndOfDecode);
                 }
 
                 Err(DecoderError::StreamError(e)) => {
@@ -136,32 +145,34 @@ impl AudioOutput for PipewireAudioOutput {
             }
         };
 
-        let mut start_flag = true;
-        let mut draining = false;
+        // let mut start_flag = true;
+        // let mut draining = false;
+        let duration = self.duration.clone();
         let stream_in_ref = stream_in.clone();
         let channels = decoder.channels();
+        let rate = decoder.sample_rate();
         let on_process = move |stream: &Stream, _data: &mut _| {
             // info!("Pipewire stream process callback triggered");
-            if start_flag {
-                let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
-                start_flag = false;
-            }
+            // if start_flag {
+            //     let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
+            //     start_flag = false;
+            // }
 
             loop {
                 match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {
-                        if !draining {
-                            let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                            draining = true;
-                        }
+                        // if !draining {
+                        let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                        // draining = true;
+                        // }
                     }
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         let _ = stream_in_ref.send(PlayerMsg::NotSupported);
-                        draining = true;
+                        // draining = true;
                     }
 
                     Err(DecoderError::Retry) => {
@@ -179,16 +190,26 @@ impl AudioOutput for PipewireAudioOutput {
                         let len = buf_data.len().min(audio_buf.len());
                         buf_data[..len]
                             .copy_from_slice(&audio_buf.drain(..len).collect::<Vec<u8>>());
-                        
+
+                        if buf_data.len() > audio_buf.capacity() {
+                            audio_buf.reserve(buf_data.len() - audio_buf.capacity());
+                        }
+
                         let chunk = data.chunk_mut();
                         *chunk.offset_mut() = 0;
                         *chunk.stride_mut() = (size_of::<f32>() * channels as usize) as _;
                         *chunk.size_mut() = len as _;
+
+                        duration.fetch_add(
+                            (len * 1000 / (size_of::<f32>() * channels as usize * rate as usize))
+                                as _,
+                        );
                     }
                 }
             }
         };
 
+        let stream_in_ref = stream_in.clone();
         let on_state_change = move |_stream: &Stream,
                                     _data: &mut _,
                                     old_state: StreamState,
@@ -197,11 +218,36 @@ impl AudioOutput for PipewireAudioOutput {
                 "Pipewire stream state changed from {:?} to {:?}",
                 old_state, new_state
             );
+            match (old_state, new_state) {
+                (StreamState::Connecting, StreamState::Paused)
+                | (StreamState::Connecting, StreamState::Streaming) => {
+                    let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
+                }
+
+                // (StreamState::Streaming, StreamState::Paused) => {
+                //     let _ = stream_in_ref.send(PlayerMsg::Pause);
+                // }
+
+                // (StreamState::Paused, StreamState::Streaming) => {
+                //     let _ = stream_in_ref.send(PlayerMsg::Unpause);
+                // }
+                (StreamState::Error(_), _) | (_, StreamState::Error(_)) => {
+                    let _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                }
+
+                _ => {}
+            }
+        };
+
+        let stream_in_ref = stream_in.clone();
+        let on_drained = move |_stream: &Stream, _data: &mut _| {
+            let _ = stream_in_ref.send(PlayerMsg::Drained);
         };
 
         let listener = match stream
             .add_local_listener::<usize>()
             .process(on_process)
+            .drained(on_drained)
             .state_changed(on_state_change)
             .register()
         {
@@ -211,30 +257,29 @@ impl AudioOutput for PipewireAudioOutput {
 
         let pw_flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::INACTIVE;
 
-        let mut audio_info = pipewire::spa::param::audio::AudioInfoRaw::new();
-        audio_info.set_format(pipewire::spa::param::audio::AudioFormat::F32LE);
-        audio_info.set_rate(44100);
-        audio_info.set_channels(2);
+        let mut audio_info = AudioInfoRaw::new();
+        audio_info.set_format(AudioFormat::F32LE);
+        audio_info.set_rate(rate);
+        audio_info.set_channels(channels as _);
         let mut position = [0; pipewire::spa::param::audio::MAX_CHANNELS];
         position[0] = pipewire::spa::sys::SPA_AUDIO_CHANNEL_FL;
         position[1] = pipewire::spa::sys::SPA_AUDIO_CHANNEL_FR;
         audio_info.set_position(position);
 
-        let values: Vec<u8> = pipewire::spa::pod::serialize::PodSerializer::serialize(
-            std::io::Cursor::new(Vec::new()),
+        let values: Vec<u8> = PodSerializer::serialize(
+            Cursor::new(Vec::new()),
             &pipewire::spa::pod::Value::Object(pipewire::spa::pod::Object {
                 type_: pipewire::spa::sys::SPA_TYPE_OBJECT_Format,
                 id: pipewire::spa::sys::SPA_PARAM_EnumFormat,
                 properties: audio_info.into(),
             }),
         )
-        .unwrap()
+        .unwrap_or_default()
         .0
         .into_inner();
 
-        let mut params = [pipewire::spa::pod::Pod::from_bytes(&values).unwrap()];
+        let mut params = [Pod::from_bytes(&values).unwrap()];
 
-        // let mut params = [];
         if stream
             .connect(Direction::Output, None, pw_flags, &mut params)
             .is_err()
@@ -253,16 +298,16 @@ impl AudioOutput for PipewireAudioOutput {
     }
 
     fn flush(&mut self) {
-        todo!()
+        self.stop();
     }
 
     fn get_dur(&self) -> Duration {
-        // todo!()
-        Duration::ZERO
+        Duration::from_millis(self.duration.load())
     }
 
     fn pause(&mut self) -> bool {
         if let Some(ref mut stream) = self.playing {
+            let _pw_lock = self.mainloop.lock();
             stream.0.set_active(false).is_ok()
         } else {
             false
@@ -270,11 +315,25 @@ impl AudioOutput for PipewireAudioOutput {
     }
 
     fn shift(&mut self) {
+        if let Some(ref mut stream) = self.playing {
+            let _pw_lock = self.mainloop.lock();
+            let _ = stream.0.set_active(false);
+            let _ = stream.0.disconnect();
+        }
+
         self.playing = self.next_up.take();
     }
 
     fn stop(&mut self) {
-        // todo!()
+        if let Some(ref mut stream) = self.playing {
+            let _pw_lock = self.mainloop.lock();
+            let _ = stream.0.set_active(false);
+            let _ = stream.0.disconnect();
+        }
+
+        self.playing = None;
+        self.next_up = None;
+        self.duration.store(0);
     }
 
     fn unpause(&mut self) -> bool {

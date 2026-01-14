@@ -6,7 +6,12 @@
 // - SPA development libraries (libspa-0.2-dev on Debian-based systems)
 // - clang development libraries (libclang-dev on Debian-based systems)
 
-use std::{io::Cursor, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use crossbeam::{
     atomic::AtomicCell,
@@ -46,6 +51,7 @@ pub struct PipewireAudioOutput {
     duration: Arc<AtomicCell<u64>>, // in milliseconds
     _registry: RegistryRc,
     _listener: Listener,
+    nodes: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl PipewireAudioOutput {
@@ -54,10 +60,24 @@ impl PipewireAudioOutput {
         let context = ContextRc::new(&mainloop, None)?;
         let core = context.connect_rc(None)?;
         let registry = core.get_registry_rc()?;
+
+        let nodes = Arc::new(Mutex::new(HashMap::new()));
+        let nodes_ref = nodes.clone();
         let listener = registry
             .add_listener_local()
-            .global(|_global| {
-                // Handle global objects if needed
+            .global(move |global| {
+                if global.type_ == ObjectType::Node {
+                    if let Some(props) = global.props {
+                        if props.get("media.class") == Some("Audio/Sink") {
+                            if let Ok(mut node_lock) = nodes_ref.lock() {
+                                node_lock.insert(
+                                    props.get("node.name").unwrap_or_default().to_owned(),
+                                    global.id,
+                                );
+                            }
+                        }
+                    }
+                }
             })
             .register();
 
@@ -72,6 +92,7 @@ impl PipewireAudioOutput {
             duration: Arc::new(AtomicCell::new(0)),
             _registry: registry,
             _listener: listener,
+            nodes,
         })
     }
 
@@ -107,7 +128,7 @@ impl AudioOutput for PipewireAudioOutput {
         mut decoder: Decoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
-        _device: &Option<String>,
+        device: &Option<String>,
     ) {
         // Create an audio buffer to hold raw u8 samples
         let buf_size = {
@@ -284,8 +305,16 @@ impl AudioOutput for PipewireAudioOutput {
 
         let mut params = [Pod::from_bytes(&values).unwrap()];
 
+        let node_id = match self.nodes.lock() {
+            Ok(nodes_lock) => device
+                .as_ref()
+                .map(|dev_name| nodes_lock.get(dev_name).copied())
+                .flatten(),
+            Err(_) => None,
+        };
+
         if stream
-            .connect(Direction::Output, None, pw_flags, &mut params)
+            .connect(Direction::Output, node_id, pw_flags, &mut params)
             .is_err()
         {
             let _ = stream_in.send(PlayerMsg::NotSupported);

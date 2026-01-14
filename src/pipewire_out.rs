@@ -12,11 +12,12 @@ use crossbeam::{
     atomic::AtomicCell,
     channel::{bounded, Sender},
 };
-use log::{info, warn};
+use log::warn;
 use pipewire::{
     context::ContextRc,
     core::CoreRc,
     properties::properties,
+    registry::{Listener, RegistryRc},
     spa::{
         param::audio::{AudioFormat, AudioInfoRaw},
         pod::{serialize::PodSerializer, Pod},
@@ -43,6 +44,8 @@ pub struct PipewireAudioOutput {
     playing: Option<(StreamRc, StreamListener<usize>)>,
     next_up: Option<(StreamRc, StreamListener<usize>)>,
     duration: Arc<AtomicCell<u64>>, // in milliseconds
+    _registry: RegistryRc,
+    _listener: Listener,
 }
 
 impl PipewireAudioOutput {
@@ -50,6 +53,13 @@ impl PipewireAudioOutput {
         let mainloop = unsafe { ThreadLoopRc::new(None, None) }?;
         let context = ContextRc::new(&mainloop, None)?;
         let core = context.connect_rc(None)?;
+        let registry = core.get_registry_rc()?;
+        let listener = registry
+            .add_listener_local()
+            .global(|_global| {
+                // Handle global objects if needed
+            })
+            .register();
 
         mainloop.start();
 
@@ -60,6 +70,8 @@ impl PipewireAudioOutput {
             playing: None,
             next_up: None,
             duration: Arc::new(AtomicCell::new(0)),
+            _registry: registry,
+            _listener: listener,
         })
     }
 
@@ -130,7 +142,7 @@ impl AudioOutput for PipewireAudioOutput {
         let pw_lock = self.mainloop.lock();
         let stream = match StreamRc::new(
             self.core.clone(),
-            "Vibe",
+            "Music",
             properties! {
                 *pipewire::keys::MEDIA_TYPE => "Audio",
                 *pipewire::keys::MEDIA_ROLE => "Music",
@@ -145,34 +157,29 @@ impl AudioOutput for PipewireAudioOutput {
             }
         };
 
-        // let mut start_flag = true;
-        // let mut draining = false;
+        self.duration.store(0);
+
+        let mut draining = false;
         let duration = self.duration.clone();
         let stream_in_ref = stream_in.clone();
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
         let on_process = move |stream: &Stream, _data: &mut _| {
-            // info!("Pipewire stream process callback triggered");
-            // if start_flag {
-            //     let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
-            //     start_flag = false;
-            // }
-
             loop {
                 match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {
-                        // if !draining {
-                        let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                        // draining = true;
-                        // }
+                        if !draining {
+                            let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                            draining = true;
+                        }
                     }
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         let _ = stream_in_ref.send(PlayerMsg::NotSupported);
-                        // draining = true;
+                        draining = true;
                     }
 
                     Err(DecoderError::Retry) => {
@@ -183,7 +190,6 @@ impl AudioOutput for PipewireAudioOutput {
             }
 
             if !audio_buf.is_empty() {
-                // info!("Filling Pipewire buffer with {} bytes", audio_buf.len());
                 if let Some(mut pw_buf) = stream.dequeue_buffer() {
                     let data = &mut pw_buf.datas_mut()[0];
                     if let Some(buf_data) = data.data() {
@@ -206,6 +212,8 @@ impl AudioOutput for PipewireAudioOutput {
                         );
                     }
                 }
+            } else {
+                let _ = stream.flush(true);
             }
         };
 
@@ -214,10 +222,6 @@ impl AudioOutput for PipewireAudioOutput {
                                     _data: &mut _,
                                     old_state: StreamState,
                                     new_state: StreamState| {
-            info!(
-                "Pipewire stream state changed from {:?} to {:?}",
-                old_state, new_state
-            );
             match (old_state, new_state) {
                 (StreamState::Connecting, StreamState::Paused)
                 | (StreamState::Connecting, StreamState::Streaming) => {
@@ -315,18 +319,22 @@ impl AudioOutput for PipewireAudioOutput {
     }
 
     fn shift(&mut self) {
+        let _pw_lock = self.mainloop.lock();
         if let Some(ref mut stream) = self.playing {
-            let _pw_lock = self.mainloop.lock();
             let _ = stream.0.set_active(false);
             let _ = stream.0.disconnect();
         }
-
         self.playing = self.next_up.take();
     }
 
     fn stop(&mut self) {
+        let _pw_lock = self.mainloop.lock();
         if let Some(ref mut stream) = self.playing {
-            let _pw_lock = self.mainloop.lock();
+            let _ = stream.0.set_active(false);
+            let _ = stream.0.disconnect();
+        }
+
+        if let Some(ref mut stream) = self.next_up {
             let _ = stream.0.set_active(false);
             let _ = stream.0.disconnect();
         }

@@ -13,7 +13,10 @@ use slimproto::{
 
 #[cfg(feature = "notify")]
 use crate::notify::notify;
-use crate::{audio_out::{self, AudioOutput}, decode, StreamParams};
+use crate::{
+    audio_out::{self, AudioOutput},
+    decode, StreamParams,
+};
 
 #[allow(unused)]
 pub enum PlayerMsg {
@@ -309,6 +312,10 @@ pub fn process_stream_msg(
             if let Some(output) = output {
                 output.shift();
                 output.unpause();
+                if let Ok(mut status) = status.lock() {
+                    status.set_elapsed_milli_seconds(0);
+                    status.set_elapsed_seconds(0);
+                }
             }
         }
 

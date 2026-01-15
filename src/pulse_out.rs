@@ -382,7 +382,8 @@ impl AudioOutput for PulseAudioOutput {
                         len
                     };
 
-                    let offset = decoder.dur_to_samples(stream_params.skip.take()) as i64;
+                    let offset = (decoder.dur_to_samples(stream_params.skip.take())
+                        * size_of::<f32>() as u64) as i64;
 
                     if let Some(stream) = stream_ref.upgrade() {
                         unsafe {

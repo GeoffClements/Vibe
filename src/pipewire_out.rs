@@ -178,14 +178,14 @@ impl AudioOutput for PipewireAudioOutput {
             }
         };
 
-        self.duration.store(0);
-
         let mut draining = false;
         let duration = self.duration.clone();
         let stream_in_ref = stream_in.clone();
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
         let on_process = move |stream: &Stream, _data: &mut _| {
+            let mut skip_time = stream_params.skip.take();
+
             loop {
                 match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
                     Ok(()) => {}
@@ -204,6 +204,21 @@ impl AudioOutput for PipewireAudioOutput {
                     }
 
                     Err(DecoderError::Retry) => {
+                        continue;
+                    }
+                }
+
+                if skip_time > Duration::ZERO {
+                    let mut bytes_to_skip =
+                        (decoder.dur_to_samples(skip_time) * size_of::<f32>() as u64) as usize;
+                    bytes_to_skip = bytes_to_skip.min(audio_buf.len());
+                    audio_buf.drain(..bytes_to_skip);
+                    let actual_skip_time =
+                        decoder.samples_to_dur((bytes_to_skip / size_of::<f32>()) as _);
+                    duration.fetch_add(actual_skip_time.as_millis() as _);
+                    skip_time = skip_time.saturating_sub(actual_skip_time);
+
+                    if audio_buf.is_empty() {
                         continue;
                     }
                 }
@@ -239,6 +254,7 @@ impl AudioOutput for PipewireAudioOutput {
         };
 
         let stream_in_ref = stream_in.clone();
+        let duration = self.duration.clone();
         let on_state_change = move |_stream: &Stream,
                                     _data: &mut _,
                                     old_state: StreamState,
@@ -246,6 +262,7 @@ impl AudioOutput for PipewireAudioOutput {
             match (old_state, new_state) {
                 (StreamState::Connecting, StreamState::Paused)
                 | (StreamState::Connecting, StreamState::Streaming) => {
+                    duration.store(0);
                     let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
                 }
 

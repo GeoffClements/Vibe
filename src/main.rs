@@ -136,7 +136,7 @@ fn cli_default_system() -> String {
     }
 }
 
-#[allow(dead_code)]
+#[allow(unused)]
 fn cli_system_list() -> PossibleValuesParser {
     cfg_if! {
         if #[cfg(all(feature = "pulse", feature = "pipewire", feature = "rodio"))] {

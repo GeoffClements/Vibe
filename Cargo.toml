@@ -3,12 +3,12 @@ name = "Vibe_Player"
 version = "0.6.0-dev"
 edition = "2021"
 description = "A music player for the Lyrion Music Server"
-license = "MIT"
-repository = "https://github.com/GeoffClements/Vibe"
-homepage = "https://github.com/GeoffClements/Vibe"
-categories = ["command-line-utilities", "multimedia::audio"]
-keywords = ["lyrion", "audio", "slim", "music"]
 readme = "README.md"
+homepage = "https://github.com/GeoffClements/Vibe"
+repository = "https://github.com/GeoffClements/Vibe"
+license = "MIT"
+keywords = ["audio", "lyrion", "music", "slim"]
+categories = ["command-line-utilities", "multimedia::audio"]
 # authors = ["Geoff Clements <ro2kz0@gmail.com>"]
 
 [package.metadata.deb]
@@ -17,60 +17,20 @@ copyright = "2025, Geoff Clements <ro2kz0@gmail.com>"
 section = "universe/sound"
 priority = "optional"
 assets = [
-    [
-        "target/release/vibe",
-        "/usr/bin/",
-        "755",
-    ],
-    [
-        "README.md",
-        "/usr/share/doc/vibe-player/README.md",
-        "644",
-    ],
+  [
+    "target/release/vibe",
+    "/usr/bin/",
+    "755",
+  ],
+  [
+    "README.md",
+    "/usr/share/doc/vibe-player/README.md",
+    "644",
+  ],
 ]
 features = ["notify"]
 maintainer-scripts = "debian/"
 extended-description = "A music player for the Lyrion Music Server"
-
-[dependencies]
-anyhow = "1.0.100"
-clap = { version = "4.5.53", features = ["derive"] }
-crossbeam = "0.8.4"
-dirs ="6.0.0"
-hostname = "0.4.2"
-log = "0.4.29"
-notify-rust = { version = "4.11.7", default-features = false, optional = true, features = [
-    "dbus",
-] }
-pulse = { package = "libpulse-binding", version = "2.30.1", optional = true }
-rodio = { version = "0.21.1", optional = true, default-features = false, features = [
-    "crossbeam-channel",
-    "playback",
-] }
-simple_logger = { version = "5.1.0", default-features = false, features = [
-    "stderr",
-    "colors",
-] }
-slimproto = "0.1.25"
-symphonia = { version = "*", git = "https://github.com/pdeljanov/Symphonia.git", branch = "dev-0.6", features = [
-    "all-codecs",
-    "all-formats",
-] }
-which = "8.0.0"
-
-[profile.dev.package."symphonia"]
-opt-level = 3
-
-[features]
-default = ["pulse"]
-notify = ["dep:notify-rust"]
-pulse = ["dep:pulse"]
-rodio = ["dep:rodio"]
-
-[[bin]]
-name = "vibe"
-path = "src/main.rs"
-
 
 # [package.metadata.deb.systemd-units]
 # unit-scripts = "resources/"
@@ -86,3 +46,45 @@ path = "src/main.rs"
 
 # [package.metadata.rpm.targets]
 # Vibe_Player = { path = "/usr/bin/Vibe_Player" }
+
+[[bin]]
+name = "vibe"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+cfg-if = "1.0.4"
+clap = { version = "4.5.53", features = ["derive"] }
+crossbeam = "0.8.4"
+dirs = "6.0.0"
+hostname = "0.4.2"
+log = "0.4.29"
+notify-rust = { version = "4.11.7", default-features = false, features = [
+  "dbus",
+], optional = true }
+pipewire = { version = "0.9.2", optional = true }
+pulse = { package = "libpulse-binding", version = "2.30.1", optional = true }
+rodio = { version = "0.21.1", default-features = false, features = [
+  "crossbeam-channel",
+  "playback",
+], optional = true }
+simple_logger = { version = "5.1.0", default-features = false, features = [
+  "colors",
+  "stderr",
+] }
+slimproto = "0.1.25"
+symphonia = { git = "https://github.com/pdeljanov/Symphonia.git", branch = "dev-0.6", version = "*", features = [
+  "all-codecs",
+  "all-formats",
+] }
+which = "8.0.0"
+
+[features]
+default = ["pulse"]
+notify = ["dep:notify-rust"]
+pipewire = ["dep:pipewire"]
+pulse = ["dep:pulse"]
+rodio = ["dep:rodio"]
+
+[profile.dev.package."symphonia"]
+opt-level = 3

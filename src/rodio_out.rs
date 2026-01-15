@@ -82,6 +82,8 @@ impl Iterator for DecoderSource {
 
         if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
+            let mut skip = self.stream_params.skip.take();
+
             loop {
                 match self.decoder.fill_sample_buffer(
                     &mut audio_buf,
@@ -107,9 +109,20 @@ impl Iterator for DecoderSource {
                     }
                 }
 
+                if skip > Duration::ZERO {
+                    let samples_to_skip =
+                        self.decoder.dur_to_samples(skip).min(audio_buf.len() as _) as usize;
+                    audio_buf.drain(..samples_to_skip);
+                    skip = skip.saturating_sub(self.decoder.samples_to_dur(samples_to_skip as _));
+                    if audio_buf.is_empty() {
+                        continue;
+                    }
+                }
+
                 if !audio_buf.is_empty() {
                     self.frame.extend(audio_buf);
                 }
+                
                 break;
             }
         }
@@ -130,7 +143,7 @@ impl Stream {
     fn try_from_device(device: Device) -> anyhow::Result<Self> {
         let output = OutputStreamBuilder::from_device(device)?.open_stream()?;
         let sink = Sink::connect_new(output.mixer());
-        
+
         Ok(Self {
             _output: output,
             sink,

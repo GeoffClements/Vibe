@@ -280,7 +280,7 @@ pub fn make_decoder(
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
-    #[cfg(any(feature = "pulse", feature = "pipewire"))] skip: Arc<AtomicCell<Duration>>,
+    skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 ) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
@@ -325,7 +325,6 @@ pub fn make_decoder(
         StreamParams {
             autostart,
             volume,
-            #[cfg(any(feature = "pulse", feature = "pipewire"))]
             skip,
             output_threshold,
         },

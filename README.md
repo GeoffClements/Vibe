@@ -46,9 +46,10 @@ vibe --create-service
 ```
 
 If you want a either a Lyrion server 
-or an output device or both  to be specified in the service
+or an output device or both to be specified in the service
 file then just use the `--server` and `--device` options
 , e.g.
+
 ```
 vibe --create-service --server my.lyrion.server --device my.output.device
  
@@ -57,82 +58,83 @@ vibe --create-service --server my.lyrion.server --device my.output.device
 This will create a systemd service file under
 `${HOME}/.config/systemd/user`. Once created,
 tell systemd of the new service with
+
 ```bash
 systemctl --user daemon-reload
 ```
 
 Start the service with
+
 ```bash
 systemctl --user start vibe.service
 ```
 
 You can make it so that vibe will start whenever you login with
+
 ```bash
 systemctl --user enable vibe.service
 ```
 
-## Output
-By default, Vibe uses the `pulse` feature flag which means it uses 
-the `pulseaudio` API. This means that it can play
-sounds both with the `pulseaudio` system and with the `pipewire` system, thanks
-to the fact that `pipewire` implements the `pulseaudio` API.
+## Building
 
-There is also the compile-time option `rodio`, for playing audio via other systems
-such as ALSA. This uses the `rodio` crate which, in turn, uses the `cpal` crate.
-This means that the following hosts are possible (according to `cpal` 
-documentation):
-- Linux (via ALSA or JACK)
-- Windows (via WASAPI by default, also ASIO)
-- macOS (via CoreAudio)
-- iOS (via CoreAudio)
-- Android (via Oboe)
-- Emscripten
+Vibe can be built with the ability to connect to different audio
+systems using compile-time features. These features are:
 
-## Compilation
+- `pulse` for Pulseaudio (the default)
+- `pipewire` for Pipewire
+- `rodio` for ALSA
 
-### Compile-time dependencies
-Vibe needs the `pulseaudio` development files, but this can be disabled, see below.
-These are provided as
-part of the `libpulse-dev` package on Debian and Ubuntu distributions.
+Note that if `pulse` is selected then it is still possible to 
+play audio on Pipewire systems because Pipewire implements the
+Pulseaudio API as well as its own.
 
-If the `rodio` feature is selected, then Vibe also needs
-the ALSA development files. These are provided as part of the `libasound2-dev`
-package on Debian and Ubuntu distributions and `alsa-lib-devel` on Fedora.
+It is possible to compile for one, two or all three of the audio
+systems by selecting the appropriate features at compile time. If
+more than one of these features are selected then a run-time
+command switch ("--system" or "-a") can be used to select
+which audio system should be used.
 
-### Features
-#### Symphonia optimization
+At least one of these features **must** be selected, noting that
+`pulse` is selected by default. This default can be switched off
+by using `--no-default-features` when building.
+
+Each audio system has its own build-time dependencies and the 
+appropriate packages must be on the development system.
+
+### Pulse
+- Pulseaudio development files
+
+### Pipewire
+- Pipewire development files
+- SPA development files
+- clang develoment files
+
+### Rodio
+- ALSA developemnt files
+
+## Other Build-time Features
+
+### Notify
+To enable new track notifications on the desktop use the `notify`
+feature. If this is enabled, you will be able to suppress the
+notifications with the `--quiet` command option.
+
+Build-time dependencies are:
+
+- DBus development files
+- `pkg-config`
+
+### Symphonia optimization
+Vibe uses the [Symphonia][`symphonia`] crate for audio stream 
+demultiplexing and decoding.
 Symphonia has optimization features that are off by default, you can switch them on 
-with `--features symphonia/<optimization>`. These features are:
+with the feature `symphonia/<optimization>`. These features are:
+
  - `opt-simd-sse`
  - `opt-simd-avx`
  - `opt-simd-neon`
 
 or you can switch them all on with `opt-simd`.
-
-If the Symphonia devs have them off by default then so will I.
-
-#### Rodio
-To use `rodio`/`cpal`, use the `rodio` feature. This will add the 
-ability to use `--system=rodio` on the command line to select the 
-rodio output. Note that when
-this feature flag is used, Vibe will still default to `pulseaudio`
-if `--system=rodio` is not specified.
-
-When the `rodio` feature is selected, Vibe will compile for
-both pulseaudio and rodio so will still have a dependency
-on `pulseaudio`.
-If you want to compile without having a dependency on pulseaudio then use
-the `--no-default-features` compilation option. In this case, the rodio
-feature flag must be selected, otherwise Vibe will not compile.
-
-#### Notify
-To enable new track notifications on the desktop use the `notify`
-feature. If this is enabled, you will be able to suppress the
-notifications with the `--quiet` command option.
-
-To compile when this feature is selected, `pkg-config` must be
-installed along with the dbus development package; this is
-`libdbus-1-dev` on Debian and Ubuntu.
 
 ## Run-time Dependencies
 Vibe has zero run-time dependencies, all the stream

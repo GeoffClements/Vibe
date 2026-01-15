@@ -1,6 +1,6 @@
 // src/notify.rs
 // Desktop notification implementation
-// 
+//
 // Required system dependencies:
 // - dbus development libraries (libdbus-1-dev on Debian-based systems)
 // - package configuration tool (pkg-config on Debian-based systems)
@@ -13,7 +13,8 @@ use symphonia::core::meta::{MetadataRevision, StandardTag};
 pub fn notify(metadata: MetadataRevision) {
     thread::spawn(move || {
         let notify_tags = metadata
-            .tags()
+            .media
+            .tags
             .iter()
             .fold(HashMap::new(), |mut tags, tag| {
                 match tag.std {

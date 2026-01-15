@@ -156,7 +156,7 @@ fn cli_system_list() -> PossibleValuesParser {
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
-    #[cfg(feature = "pulse")]
+    #[cfg(any(feature = "pulse", feature = "pipewire"))]
     skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 }

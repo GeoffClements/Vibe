@@ -244,7 +244,7 @@ pub fn process_slim_msg(
                             pcmchannels,
                             autostart,
                             volume.clone(),
-                            #[cfg(feature = "pulse")]
+                            #[cfg(any(feature = "pulse", feature = "pipewire"))]
                             skip.clone(),
                             output_threshold,
                         ) {

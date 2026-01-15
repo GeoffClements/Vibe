@@ -6,9 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
-#[cfg(not(feature = "pulse"))]
-use crossbeam::channel::Sender;
-#[cfg(feature = "pulse")]
+#[allow(unused_imports)]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 
 use slimproto::{
@@ -18,7 +16,6 @@ use slimproto::{
 };
 
 use symphonia::core::{
-    audio::sample::SampleFormat,
     codecs::{
         audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions},
         CodecParameters,
@@ -54,43 +51,10 @@ impl std::fmt::Display for DecoderError {
 
 impl std::error::Error for DecoderError {}
 
-#[derive(Clone, Copy)]
-pub enum AudioFormat {
-    F32,
-    I32,
-    U32,
-    I16,
-    U16,
-}
-
-// impl AudioFormat {
-//     pub fn size_of(&self) -> usize {
-//         match self {
-//             Self::F32 => mem::size_of::<f32>(),
-//             Self::I32 => mem::size_of::<i32>(),
-//             Self::U32 => mem::size_of::<u32>(),
-//             Self::I16 => mem::size_of::<i16>(),
-//             Self::U16 => mem::size_of::<u16>(),
-//         }
-//     }
-// }
-
-impl From<SampleFormat> for AudioFormat {
-    fn from(value: SampleFormat) -> Self {
-        match value {
-            SampleFormat::U16 => AudioFormat::U16,
-            SampleFormat::S16 => AudioFormat::I16,
-            SampleFormat::U32 => AudioFormat::U32,
-            SampleFormat::S32 => AudioFormat::I32,
-            _ => AudioFormat::F32,
-        }
-    }
-}
-
 struct AudioSpec {
     channels: u8,
     sample_rate: u32,
-    format: AudioFormat,
+    // format: AudioFormat,
 }
 
 pub struct Decoder {
@@ -133,21 +97,6 @@ impl Decoder {
             .default_track(TrackType::Audio)
             .context("Unable to find default track")?;
 
-        // let sample_format = match pcmsamplesize {
-        //     PcmSampleSize::Eight => Ok(SampleFormat::S8),
-        //     PcmSampleSize::Sixteen => Ok(SampleFormat::S16),
-        //     PcmSampleSize::Twenty => Ok(SampleFormat::S24),
-        //     PcmSampleSize::ThirtyTwo => Ok(SampleFormat::S32),
-        //     PcmSampleSize::SelfDescribing => match track.codec_params {
-        //         Some(CodecParameters::Audio(AudioCodecParameters {
-        //             sample_format: Some(sf),
-        //             ..
-        //         })) => Ok(sf),
-        //         _ => Err(anyhow::Error::msg("Unable to set sample size")),
-        //     },
-        // }?;
-        let sample_format = SampleFormat::F32;
-
         let sample_rate = match pcmsamplerate {
             PcmSampleRate::Rate(rate) => Ok(rate),
             PcmSampleRate::SelfDescribing => match track.codec_params {
@@ -189,7 +138,6 @@ impl Decoder {
             spec: AudioSpec {
                 channels,
                 sample_rate,
-                format: sample_format.into(),
             },
         })
     }
@@ -200,11 +148,6 @@ impl Decoder {
 
     pub fn sample_rate(&self) -> u32 {
         self.spec.sample_rate
-    }
-
-    #[cfg(feature = "pulse")]
-    pub fn format(&self) -> AudioFormat {
-        self.spec.format
     }
 
     fn get_audio_buffer(&mut self, volume: Arc<Mutex<Vec<f32>>>) -> Result<Vec<f32>, DecoderError> {
@@ -337,7 +280,7 @@ pub fn make_decoder(
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
     volume: Arc<Mutex<Vec<f32>>>,
-    #[cfg(feature = "pulse")] skip: Arc<AtomicCell<Duration>>,
+    #[cfg(any(feature = "pulse", feature = "pipewire"))] skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 ) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
@@ -382,7 +325,7 @@ pub fn make_decoder(
         StreamParams {
             autostart,
             volume,
-            #[cfg(feature = "pulse")]
+            #[cfg(any(feature = "pulse", feature = "pipewire"))]
             skip,
             output_threshold,
         },

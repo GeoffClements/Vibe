@@ -23,7 +23,7 @@ use pulse::{
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{AudioFormat, Decoder, DecoderError},
+    decode::{Decoder, DecoderError},
     message::PlayerMsg,
     StreamParams,
 };
@@ -38,11 +38,12 @@ pub struct Stream {
 impl Stream {
     fn new(context: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
         let spec = Spec {
-            format: match decoder.format() {
-                AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
-                AudioFormat::I32 | AudioFormat::U32 => pulse::sample::Format::S32NE,
-                AudioFormat::F32 => pulse::sample::Format::F32le,
-            },
+            // format: match decoder.format() {
+            //     AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
+            //     AudioFormat::I32 | AudioFormat::U32 => pulse::sample::Format::S32NE,
+            //     AudioFormat::F32 => pulse::sample::Format::F32le,
+            // },
+            format: pulse::sample::Format::F32le,
             rate: decoder.sample_rate(),
             channels: decoder.channels(),
         };

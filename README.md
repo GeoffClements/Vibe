@@ -107,10 +107,10 @@ appropriate packages must be on the development system.
 ### Pipewire
 - Pipewire development files
 - SPA development files
-- clang develoment files
+- clang development files
 
 ### Rodio
-- ALSA developemnt files
+- ALSA development files
 
 ## Other Build-time Features
 

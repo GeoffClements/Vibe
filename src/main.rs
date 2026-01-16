@@ -189,12 +189,11 @@ fn main() -> anyhow::Result<()> {
                 all(feature = "pulse", feature = "pipewire"),
                 all(feature = "rodio", feature = "pipewire")
             ))] {
-                let sys = cli.system;
+                cli.system
             } else {
-                let sys = cli_default_system();
+                cli_default_system()
             }
-        };
-        sys
+        }
     };
     let mut output = None;
 

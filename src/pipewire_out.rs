@@ -43,8 +43,8 @@ pub struct PipewireAudioOutput {
     mainloop: ThreadLoopRc,
     _context: ContextRc,
     core: CoreRc,
-    playing: Option<(StreamRc, StreamListener<usize>)>,
-    next_up: Option<(StreamRc, StreamListener<usize>)>,
+    playing: Option<(StreamRc, StreamListener<()>)>,
+    next_up: Option<(StreamRc, StreamListener<()>)>,
     duration: Arc<AtomicCell<u64>>, // in milliseconds
     _registry: RegistryRc,
     _listener: Listener,
@@ -95,7 +95,7 @@ impl PipewireAudioOutput {
 
     fn enqueue(
         &mut self,
-        stream: (StreamRc, StreamListener<usize>),
+        stream: (StreamRc, StreamListener<()>),
         autostart: slimproto::proto::AutoStart,
         _stream_in: Sender<PlayerMsg>,
     ) {
@@ -284,7 +284,7 @@ impl AudioOutput for PipewireAudioOutput {
         };
 
         let listener = match stream
-            .add_local_listener::<usize>()
+            .add_local_listener::<()>()
             .process(on_process)
             .drained(on_drained)
             .state_changed(on_state_change)

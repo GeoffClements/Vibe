@@ -12,7 +12,7 @@ Vibe is a music player that uses the [SLIM TCP protocol][`slimtcp`] to
 connect to a [Lyrion Music Server][`lms`], formally known as a
 Logitech Media Server.
 
-Vibe is intended to be run as a user daemon and designed to be simple and
+Vibe is intended to be run as a user daemon and is designed to be simple and
 as unobtrusive as possible. It's possible to start Vibe at login
 using a systemd service file and this can be generated automatically.
 
@@ -45,8 +45,8 @@ Vibe can create a systemd user service file for you using
 vibe --create-service
 ```
 
-If you want a either a Lyrion server 
-or an output device or both to be specified in the service
+If you want either a Lyrion server, 
+or an output device, or both to be specified in the service
 file then just use the `--server` and `--device` options
 , e.g.
 
@@ -95,7 +95,7 @@ command switch ("--system" or "-a") can be used to select
 which audio system should be used.
 
 At least one of these features **must** be selected, noting that
-`pulse` is selected by default. This default can be switched off
+`pulse` is normally selected by default. This default can be switched off
 by using `--no-default-features` when building.
 
 Each audio system has its own build-time dependencies and the 
@@ -117,7 +117,7 @@ appropriate packages must be on the development system.
 ### Notify
 To enable new track notifications on the desktop use the `notify`
 feature. If this is enabled, you will be able to suppress the
-notifications with the `--quiet` command option.
+notifications at run time with the `--quiet` command option.
 
 Build-time dependencies are:
 

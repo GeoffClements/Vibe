@@ -22,7 +22,10 @@ use pulse::{
 };
 
 use crate::{
-    SKIP, StreamParams, audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg
+    audio_out::AudioOutput,
+    decode::{Decoder, DecoderError},
+    message::PlayerMsg,
+    StreamParams, SKIP,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
@@ -35,11 +38,6 @@ pub struct Stream {
 impl Stream {
     fn new(context: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
         let spec = Spec {
-            // format: match decoder.format() {
-            //     AudioFormat::I16 | AudioFormat::U16 => pulse::sample::Format::S16NE,
-            //     AudioFormat::I32 | AudioFormat::U32 => pulse::sample::Format::S32NE,
-            //     AudioFormat::F32 => pulse::sample::Format::F32le,
-            // },
             format: pulse::sample::Format::F32le,
             rate: decoder.sample_rate(),
             channels: decoder.channels(),
@@ -286,11 +284,7 @@ impl AudioOutput for PulseAudioOutput {
         // Create an audio buffer to hold raw u8 samples
         let buf_size = {
             let num_samples = decoder.dur_to_samples(stream_params.output_threshold) as usize;
-            if num_samples < MIN_AUDIO_BUFFER_SIZE {
-                MIN_AUDIO_BUFFER_SIZE
-            } else {
-                num_samples
-            }
+            num_samples.max(MIN_AUDIO_BUFFER_SIZE)
         };
 
         let mut audio_buf = Vec::with_capacity(buf_size);
@@ -370,14 +364,10 @@ impl AudioOutput for PulseAudioOutput {
                 }
 
                 if !audio_buf.is_empty() {
-                    let buf_len = if audio_buf.len() < len {
-                        audio_buf.len()
-                    } else {
-                        len
-                    };
+                    let buf_len = audio_buf.len().min(len);
 
-                    let offset = (decoder.dur_to_samples(SKIP.take())
-                        * size_of::<f32>() as u64) as i64;
+                    let offset =
+                        (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
 
                     if let Some(stream) = stream_ref.upgrade() {
                         unsafe {

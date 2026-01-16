@@ -194,15 +194,8 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<f32>,
         limit: Option<usize>,
-        // volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError> {
-        let limit = limit.unwrap_or_else(|| {
-            if buffer.capacity() > 0 {
-                buffer.capacity()
-            } else {
-                1024
-            }
-        });
+        let limit = limit.unwrap_or_else(|| buffer.capacity().max(1024));
 
         while buffer.len() < limit {
             let audio_buffer = self.get_audio_buffer()?;
@@ -217,15 +210,8 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<u8>,
         limit: Option<usize>,
-        // volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError> {
-        let limit = limit.unwrap_or_else(|| {
-            if buffer.capacity() > 0 {
-                buffer.capacity() / 2
-            } else {
-                1024
-            }
-        });
+        let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
 
         if limit > buffer.capacity() {
             buffer.reserve(limit - buffer.capacity());

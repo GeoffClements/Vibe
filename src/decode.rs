@@ -1,7 +1,6 @@
 use std::{
     io::{BufRead, Write},
     net::{Ipv4Addr, TcpStream},
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -12,7 +11,6 @@ use crossbeam::{atomic::AtomicCell, channel::Sender};
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
-    status::StatusData,
 };
 
 use symphonia::core::{
@@ -28,7 +26,7 @@ use symphonia::core::{
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
 
-use crate::{message::PlayerMsg, StreamParams, VOLUME};
+use crate::{message::PlayerMsg, StreamParams, STATUS, VOLUME};
 
 #[derive(Debug)]
 pub enum DecoderError {
@@ -271,7 +269,6 @@ pub fn make_decoder(
     server_port: u16,
     http_headers: String,
     stream_in: Sender<PlayerMsg>,
-    status: Arc<Mutex<StatusData>>,
     threshold: u32,
     format: slimproto::proto::Format,
     pcmsamplesize: slimproto::proto::PcmSampleSize,
@@ -293,7 +290,7 @@ pub fn make_decoder(
     let mut data_stream = SlimBuffer::with_capacity(
         threshold as usize * 1024,
         data_stream,
-        status.clone(),
+        STATUS.clone(),
         threshold,
         None,
     );

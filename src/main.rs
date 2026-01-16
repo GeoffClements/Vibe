@@ -153,9 +153,11 @@ fn cli_system_list() -> PossibleValuesParser {
     }
 }
 
-// Controls from the LMS
+// Controls from/to the LMS
 pub static VOLUME: LazyLock<Mutex<Vec<f32>>> = LazyLock::new(|| Mutex::new(vec![1.0, 1.0]));
 pub static SKIP: LazyLock<AtomicCell<Duration>> = LazyLock::new(|| AtomicCell::new(Duration::ZERO));
+pub static STATUS: LazyLock<Arc<Mutex<StatusData>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(StatusData::default())));
 
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
@@ -241,7 +243,7 @@ fn main() -> anyhow::Result<()> {
         };
 
         // Start the slim protocol threads
-        let status = Arc::new(Mutex::new(StatusData::default()));
+        // let status = Arc::new(Mutex::new(StatusData::default()));
         let start_time = Instant::now();
         let mut server_default_ip = *cli_server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
         let (slim_tx_in, slim_tx_out) = bounded(1);
@@ -269,7 +271,6 @@ fn main() -> anyhow::Result<()> {
                         &mut server_default_ip,
                         name.clone(),
                         slim_tx_in.clone(),
-                        status.clone(),
                         stream_in.clone(),
                         &start_time,
                         &output_system,
@@ -291,7 +292,6 @@ fn main() -> anyhow::Result<()> {
                     let msg = op.recv(&stream_out)?;
                     process_stream_msg(
                         msg,
-                        status.clone(),
                         slim_tx_in.clone(),
                         &mut output,
                         stream_in.clone(),
@@ -309,7 +309,7 @@ fn main() -> anyhow::Result<()> {
                         None => Duration::ZERO,
                     };
 
-                    if let Ok(mut status) = status.lock() {
+                    if let Ok(mut status) = STATUS.lock() {
                         // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
                         status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                         status.set_elapsed_seconds(play_time.as_secs() as u32);

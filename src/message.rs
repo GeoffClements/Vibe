@@ -1,21 +1,18 @@
 use std::{
     net::Ipv4Addr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
 use crossbeam::channel::Sender;
 use log::{info, warn};
-use slimproto::{
-    status::{StatusCode, StatusData},
-    ClientMessage, ServerMessage,
-};
+use slimproto::{status::StatusCode, ClientMessage, ServerMessage};
 
 #[cfg(feature = "notify")]
 use crate::notify::notify;
 use crate::{
     audio_out::{self, AudioOutput},
-    decode, StreamParams, SKIP, VOLUME,
+    decode, StreamParams, SKIP, STATUS, VOLUME,
 };
 
 #[allow(unused)]
@@ -39,9 +36,7 @@ pub fn process_slim_msg(
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
     slim_tx_in: Sender<ClientMessage>,
-    status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
-    // skip: Arc<AtomicCell<Duration>>,
     start_time: &Instant,
     output_system: &str,
     #[cfg(feature = "rodio")] device: &Option<String>,
@@ -85,7 +80,7 @@ pub fn process_slim_msg(
                 None => Duration::ZERO,
             };
 
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 // info!("Sending status update - jiffies: {:?}", status.get_jiffies());
                 status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                 status.set_elapsed_seconds(play_time.as_secs() as u32);
@@ -102,7 +97,7 @@ pub fn process_slim_msg(
                 output.stop();
             }
 
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 status.set_output_buffer_size(0);
@@ -119,7 +114,7 @@ pub fn process_slim_msg(
                 output.flush();
             }
 
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 status.set_output_buffer_size(0);
@@ -140,7 +135,7 @@ pub fn process_slim_msg(
             if let Some(output) = output {
                 if interval.is_zero() {
                     if output.pause() {
-                        if let Ok(mut status) = status.lock() {
+                        if let Ok(mut status) = STATUS.lock() {
                             info!("Sending paused to server");
                             status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                             status.set_elapsed_seconds(play_time.as_secs() as u32);
@@ -169,7 +164,7 @@ pub fn process_slim_msg(
             if interval.is_zero() {
                 if let Some(output) = output {
                     if output.unpause() {
-                        if let Ok(mut status) = status.lock() {
+                        if let Ok(mut status) = STATUS.lock() {
                             info!("Sending resumed to server");
                             status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                             status.set_elapsed_seconds(play_time.as_secs() as u32);
@@ -185,7 +180,7 @@ pub fn process_slim_msg(
                 std::thread::spawn(move || {
                     std::thread::sleep(dur);
                     stream_in.send(PlayerMsg::Unpause).ok();
-                    if let Ok(mut status) = status.lock() {
+                    if let Ok(mut status) = STATUS.lock() {
                         info!("Sending resumed to server");
                         status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                         status.set_elapsed_seconds(play_time.as_secs() as u32);
@@ -222,7 +217,7 @@ pub fn process_slim_msg(
                 let num_crlf = http_headers.matches("\r\n").count();
 
                 if num_crlf > 0 {
-                    if let Ok(mut status) = status.lock() {
+                    if let Ok(mut status) = STATUS.lock() {
                         status.add_crlf(num_crlf as u8);
                     }
 
@@ -235,7 +230,6 @@ pub fn process_slim_msg(
                             server_port,
                             http_headers,
                             stream_in_r.clone(),
-                            status,
                             threshold,
                             format,
                             pcmsamplesize,
@@ -287,7 +281,6 @@ pub fn process_slim_msg(
 
 pub fn process_stream_msg(
     msg: PlayerMsg,
-    status: Arc<Mutex<StatusData>>,
     slim_tx_in: Sender<ClientMessage>,
     output: &mut Option<Box<dyn AudioOutput>>,
     stream_in: Sender<PlayerMsg>,
@@ -296,7 +289,7 @@ pub fn process_stream_msg(
 ) {
     match msg {
         PlayerMsg::EndOfDecode => {
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 info!("Decoder ready for new stream");
                 let msg = status.make_status_message(StatusCode::DecoderReady);
                 slim_tx_in.send(msg).ok();
@@ -308,7 +301,7 @@ pub fn process_stream_msg(
             if let Some(output) = output {
                 output.shift();
                 output.unpause();
-                if let Ok(mut status) = status.lock() {
+                if let Ok(mut status) = STATUS.lock() {
                     status.set_elapsed_milli_seconds(0);
                     status.set_elapsed_seconds(0);
                 }
@@ -326,7 +319,7 @@ pub fn process_stream_msg(
             if let Some(output) = output {
                 if output.unpause() {
                     info!("Sending track unpaused by player");
-                    if let Ok(mut status) = status.lock() {
+                    if let Ok(mut status) = STATUS.lock() {
                         let msg = status.make_status_message(StatusCode::TrackStarted);
                         slim_tx_in.send(msg).ok();
                     }
@@ -335,7 +328,7 @@ pub fn process_stream_msg(
         }
 
         PlayerMsg::Connected => {
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 info!("Sending stream connected");
                 let msg = status.make_status_message(StatusCode::Connect);
                 slim_tx_in.send(msg).ok();
@@ -343,7 +336,7 @@ pub fn process_stream_msg(
         }
 
         PlayerMsg::BufferThreshold => {
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 info!("Sending buffer threshold reached");
                 let msg = status.make_status_message(StatusCode::BufferThreshold);
                 slim_tx_in.send(msg).ok();
@@ -352,14 +345,14 @@ pub fn process_stream_msg(
 
         PlayerMsg::NotSupported => {
             warn!("Unsupported format");
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
                 slim_tx_in.send(msg).ok();
             }
         }
 
         PlayerMsg::StreamEstablished => {
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 info!("Sending stream established");
                 let msg = status.make_status_message(StatusCode::StreamEstablished);
                 slim_tx_in.send(msg).ok();
@@ -368,7 +361,7 @@ pub fn process_stream_msg(
 
         PlayerMsg::TrackStarted => {
             info!("Sending track started");
-            if let Ok(mut status) = status.lock() {
+            if let Ok(mut status) = STATUS.lock() {
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 let msg = status.make_status_message(StatusCode::TrackStarted);

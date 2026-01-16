@@ -1,6 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddrV4, ToSocketAddrs},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, LazyLock, Mutex, RwLock},
     time::{Duration, Instant},
 };
 
@@ -153,9 +153,10 @@ fn cli_system_list() -> PossibleValuesParser {
     }
 }
 
+pub static VOLUME: LazyLock<Mutex<Vec<f32>>> = LazyLock::new(|| Mutex::new(vec![1.0, 1.0]));
+
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
-    volume: Arc<Mutex<Vec<f32>>>,
     skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 }
@@ -247,7 +248,7 @@ fn main() -> anyhow::Result<()> {
         let (slim_rx_in, slim_rx_out) = bounded(1);
         proto::run(cli_server, slim_rx_in.clone(), slim_tx_out.clone());
 
-        let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
+        // let volume = Arc::new(Mutex::new(vec![1.0f32, 1.0]));
         let (stream_in, stream_out) = bounded(10);
         let mut select = Select::new();
         let slim_idx = select.recv(&slim_rx_out);
@@ -268,7 +269,6 @@ fn main() -> anyhow::Result<()> {
                         &mut server_default_ip,
                         name.clone(),
                         slim_tx_in.clone(),
-                        volume.clone(),
                         status.clone(),
                         stream_in.clone(),
                         skip.clone(),

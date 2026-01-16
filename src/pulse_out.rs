@@ -300,7 +300,7 @@ impl AudioOutput for PulseAudioOutput {
 
         // Prefill audio buffer to threshold
         loop {
-            match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
+            match decoder.fill_raw_buffer(&mut audio_buf, None) {
                 Ok(()) => {}
 
                 Err(DecoderError::EndOfDecode) => {
@@ -349,11 +349,7 @@ impl AudioOutput for PulseAudioOutput {
                 }
 
                 loop {
-                    match decoder.fill_raw_buffer(
-                        &mut audio_buf,
-                        Some(len),
-                        stream_params.volume.clone(),
-                    ) {
+                    match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
                         Ok(()) => {}
 
                         Err(DecoderError::EndOfDecode) => {

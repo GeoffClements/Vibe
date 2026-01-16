@@ -140,7 +140,7 @@ impl AudioOutput for PipewireAudioOutput {
 
         // Prefill audio buffer to threshold
         loop {
-            match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
+            match decoder.fill_raw_buffer(&mut audio_buf, None) {
                 Ok(()) => {}
 
                 Err(DecoderError::EndOfDecode) => {
@@ -187,7 +187,7 @@ impl AudioOutput for PipewireAudioOutput {
             let mut skip_time = stream_params.skip.take();
 
             loop {
-                match decoder.fill_raw_buffer(&mut audio_buf, None, stream_params.volume.clone()) {
+                match decoder.fill_raw_buffer(&mut audio_buf, None) {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {

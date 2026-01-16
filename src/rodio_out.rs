@@ -85,11 +85,10 @@ impl Iterator for DecoderSource {
             let mut skip = self.stream_params.skip.take();
 
             loop {
-                match self.decoder.fill_sample_buffer(
-                    &mut audio_buf,
-                    Some(2 * MIN_AUDIO_BUFFER_SIZE),
-                    self.stream_params.volume.clone(),
-                ) {
+                match self
+                    .decoder
+                    .fill_sample_buffer(&mut audio_buf, Some(2 * MIN_AUDIO_BUFFER_SIZE))
+                {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {
@@ -122,7 +121,7 @@ impl Iterator for DecoderSource {
                 if !audio_buf.is_empty() {
                     self.frame.extend(audio_buf);
                 }
-                
+
                 break;
             }
         }

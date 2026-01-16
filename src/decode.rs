@@ -28,7 +28,7 @@ use symphonia::core::{
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
 
-use crate::{message::PlayerMsg, StreamParams};
+use crate::{StreamParams, message::PlayerMsg, VOLUME};
 
 #[derive(Debug)]
 pub enum DecoderError {
@@ -150,7 +150,7 @@ impl Decoder {
         self.spec.sample_rate
     }
 
-    fn get_audio_buffer(&mut self, volume: Arc<Mutex<Vec<f32>>>) -> Result<Vec<f32>, DecoderError> {
+    fn get_audio_buffer(&mut self) -> Result<Vec<f32>, DecoderError> {
         let decoded = loop {
             let packet = self
                 .reader
@@ -172,7 +172,7 @@ impl Decoder {
             }
         };
 
-        let (left_volume, right_volume) = volume
+        let (left_volume, right_volume) = VOLUME
             .lock()
             .map(|vol| (vol[0], vol[1]))
             .unwrap_or((0.5, 0.5));
@@ -197,7 +197,7 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<f32>,
         limit: Option<usize>,
-        volume: Arc<Mutex<Vec<f32>>>,
+        // volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError> {
         let limit = limit.unwrap_or_else(|| {
             if buffer.capacity() > 0 {
@@ -208,7 +208,7 @@ impl Decoder {
         });
 
         while buffer.len() < limit {
-            let audio_buffer = self.get_audio_buffer(volume.clone())?;
+            let audio_buffer = self.get_audio_buffer()?;
             buffer.extend_from_slice(&audio_buffer[..]);
         }
 
@@ -220,7 +220,7 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<u8>,
         limit: Option<usize>,
-        volume: Arc<Mutex<Vec<f32>>>,
+        // volume: Arc<Mutex<Vec<f32>>>,
     ) -> Result<(), DecoderError> {
         let limit = limit.unwrap_or_else(|| {
             if buffer.capacity() > 0 {
@@ -236,7 +236,7 @@ impl Decoder {
 
         while buffer.len() < limit {
             let audio_buffer: Vec<_> = self
-                .get_audio_buffer(volume.clone())?
+                .get_audio_buffer()?
                 .iter()
                 .flat_map(|s| s.to_le_bytes())
                 .collect();
@@ -279,7 +279,7 @@ pub fn make_decoder(
     pcmsamplerate: slimproto::proto::PcmSampleRate,
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
-    volume: Arc<Mutex<Vec<f32>>>,
+    // volume: Arc<Mutex<Vec<f32>>>,
     skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 ) -> anyhow::Result<(Decoder, StreamParams)> {
@@ -324,7 +324,7 @@ pub fn make_decoder(
         Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
-            volume,
+            // volume,
             skip,
             output_threshold,
         },

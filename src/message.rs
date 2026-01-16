@@ -14,8 +14,7 @@ use slimproto::{
 #[cfg(feature = "notify")]
 use crate::notify::notify;
 use crate::{
-    audio_out::{self, AudioOutput},
-    decode, StreamParams,
+    StreamParams, audio_out::{self, AudioOutput}, decode, VOLUME
 };
 
 #[allow(unused)]
@@ -39,7 +38,6 @@ pub fn process_slim_msg(
     server_default_ip: &mut Ipv4Addr,
     name: Arc<RwLock<String>>,
     slim_tx_in: Sender<ClientMessage>,
-    volume: Arc<Mutex<Vec<f32>>>,
     status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
     skip: Arc<AtomicCell<Duration>>,
@@ -71,7 +69,7 @@ pub fn process_slim_msg(
 
         ServerMessage::Gain(left, right) => {
             info!("Setting volume to ({left}, {right})");
-            if let Ok(mut vol) = volume.lock() {
+            if let Ok(mut vol) = VOLUME.lock() {
                 let left = if left > 1.0 { 1.0f32 } else { left as f32 };
                 let right = if right > 1.0 { 1.0f32 } else { right as f32 };
                 vol[0] = left.sqrt();
@@ -243,7 +241,6 @@ pub fn process_slim_msg(
                             pcmsamplerate,
                             pcmchannels,
                             autostart,
-                            volume.clone(),
                             skip.clone(),
                             output_threshold,
                         ) {

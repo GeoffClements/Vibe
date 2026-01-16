@@ -22,10 +22,7 @@ use pulse::{
 };
 
 use crate::{
-    audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
-    message::PlayerMsg,
-    StreamParams,
+    SKIP, StreamParams, audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
@@ -379,7 +376,7 @@ impl AudioOutput for PulseAudioOutput {
                         len
                     };
 
-                    let offset = (decoder.dur_to_samples(stream_params.skip.take())
+                    let offset = (decoder.dur_to_samples(SKIP.take())
                         * size_of::<f32>() as u64) as i64;
 
                     if let Some(stream) = stream_ref.upgrade() {

@@ -34,10 +34,7 @@ use pipewire::{
 };
 
 use crate::{
-    audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
-    message::PlayerMsg,
-    StreamParams,
+    SKIP, StreamParams, audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
@@ -184,7 +181,7 @@ impl AudioOutput for PipewireAudioOutput {
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
         let on_process = move |stream: &Stream, _data: &mut _| {
-            let mut skip_time = stream_params.skip.take();
+            let mut skip_time = SKIP.take();
 
             loop {
                 match decoder.fill_raw_buffer(&mut audio_buf, None) {

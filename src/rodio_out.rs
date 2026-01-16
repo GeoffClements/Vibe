@@ -18,7 +18,7 @@ use crate::{
     audio_out::AudioOutput,
     decode::{Decoder, DecoderError},
     message::PlayerMsg,
-    StreamParams,
+    StreamParams, SKIP,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
@@ -26,23 +26,16 @@ const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 pub struct DecoderSource {
     decoder: Decoder,
     frame: VecDeque<f32>,
-    stream_params: StreamParams,
     stream_in: Sender<PlayerMsg>,
     start_flag: bool,
     eod_flag: bool,
 }
 
 impl DecoderSource {
-    fn new(
-        decoder: Decoder,
-        stream_params: StreamParams,
-        capacity: usize,
-        stream_in: Sender<PlayerMsg>,
-    ) -> Self {
+    fn new(decoder: Decoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
         DecoderSource {
             decoder,
             frame: VecDeque::with_capacity(capacity),
-            stream_params,
             stream_in,
             start_flag: true,
             eod_flag: false,
@@ -82,7 +75,7 @@ impl Iterator for DecoderSource {
 
         if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
-            let mut skip = self.stream_params.skip.take();
+            let mut skip = SKIP.take();
 
             loop {
                 match self
@@ -205,8 +198,7 @@ impl AudioOutput for RodioAudioOutput {
         let autostart = stream_params.autostart == AutoStart::Auto;
 
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
-        let decoder_source =
-            DecoderSource::new(decoder, stream_params, capacity, stream_in.clone());
+        let decoder_source = DecoderSource::new(decoder, capacity, stream_in.clone());
 
         stream_in.send(PlayerMsg::StreamEstablished).ok();
 

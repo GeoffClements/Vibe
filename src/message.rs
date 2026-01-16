@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam::{atomic::AtomicCell, channel::Sender};
+use crossbeam::channel::Sender;
 use log::{info, warn};
 use slimproto::{
     status::{StatusCode, StatusData},
@@ -14,7 +14,8 @@ use slimproto::{
 #[cfg(feature = "notify")]
 use crate::notify::notify;
 use crate::{
-    StreamParams, audio_out::{self, AudioOutput}, decode, VOLUME
+    audio_out::{self, AudioOutput},
+    decode, StreamParams, SKIP, VOLUME,
 };
 
 #[allow(unused)]
@@ -40,7 +41,7 @@ pub fn process_slim_msg(
     slim_tx_in: Sender<ClientMessage>,
     status: Arc<Mutex<StatusData>>,
     stream_in: Sender<PlayerMsg>,
-    skip: Arc<AtomicCell<Duration>>,
+    // skip: Arc<AtomicCell<Duration>>,
     start_time: &Instant,
     output_system: &str,
     #[cfg(feature = "rodio")] device: &Option<String>,
@@ -197,7 +198,7 @@ pub fn process_slim_msg(
 
         ServerMessage::Skip(interval) => {
             info!("Skip ahead: {:?}", interval);
-            skip.store(interval);
+            SKIP.store(interval);
         }
 
         ServerMessage::Stream {
@@ -241,7 +242,6 @@ pub fn process_slim_msg(
                             pcmsamplerate,
                             pcmchannels,
                             autostart,
-                            skip.clone(),
                             output_threshold,
                         ) {
                             Ok(decoder_params) => {

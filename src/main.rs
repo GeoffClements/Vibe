@@ -153,11 +153,12 @@ fn cli_system_list() -> PossibleValuesParser {
     }
 }
 
+// Controls from the LMS
 pub static VOLUME: LazyLock<Mutex<Vec<f32>>> = LazyLock::new(|| Mutex::new(vec![1.0, 1.0]));
+pub static SKIP: LazyLock<AtomicCell<Duration>> = LazyLock::new(|| AtomicCell::new(Duration::ZERO));
 
 pub struct StreamParams {
     autostart: slimproto::proto::AutoStart,
-    skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 }
 
@@ -243,7 +244,6 @@ fn main() -> anyhow::Result<()> {
         let status = Arc::new(Mutex::new(StatusData::default()));
         let start_time = Instant::now();
         let mut server_default_ip = *cli_server.unwrap_or(SocketAddrV4::new(0.into(), 0)).ip();
-        let skip = Arc::new(AtomicCell::new(Duration::ZERO));
         let (slim_tx_in, slim_tx_out) = bounded(1);
         let (slim_rx_in, slim_rx_out) = bounded(1);
         proto::run(cli_server, slim_rx_in.clone(), slim_tx_out.clone());
@@ -271,7 +271,6 @@ fn main() -> anyhow::Result<()> {
                         slim_tx_in.clone(),
                         status.clone(),
                         stream_in.clone(),
-                        skip.clone(),
                         &start_time,
                         &output_system,
                         #[cfg(feature = "rodio")]

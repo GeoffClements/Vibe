@@ -28,7 +28,7 @@ use symphonia::core::{
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
 
-use crate::{StreamParams, message::PlayerMsg, VOLUME};
+use crate::{message::PlayerMsg, StreamParams, VOLUME};
 
 #[derive(Debug)]
 pub enum DecoderError {
@@ -54,7 +54,6 @@ impl std::error::Error for DecoderError {}
 struct AudioSpec {
     channels: u8,
     sample_rate: u32,
-    // format: AudioFormat,
 }
 
 pub struct Decoder {
@@ -279,8 +278,6 @@ pub fn make_decoder(
     pcmsamplerate: slimproto::proto::PcmSampleRate,
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
-    // volume: Arc<Mutex<Vec<f32>>>,
-    skip: Arc<AtomicCell<Duration>>,
     output_threshold: Duration,
 ) -> anyhow::Result<(Decoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
@@ -324,8 +321,6 @@ pub fn make_decoder(
         Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
-            // volume,
-            skip,
             output_threshold,
         },
     ))

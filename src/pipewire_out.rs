@@ -322,8 +322,7 @@ impl AudioOutput for PipewireAudioOutput {
         let node_id = match self.nodes.lock() {
             Ok(nodes_lock) => device
                 .as_ref()
-                .map(|dev_name| nodes_lock.get(dev_name).copied())
-                .flatten(),
+                .and_then(|dev_name| nodes_lock.get(dev_name).copied()),
             Err(_) => None,
         };
 

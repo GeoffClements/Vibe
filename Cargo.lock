@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Vibe_Player"
-version = "0.6.0-dev"
+version = "0.6.0-dev-flac-skip"
 dependencies = [
  "anyhow",
  "cfg-if",

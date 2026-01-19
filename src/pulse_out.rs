@@ -171,6 +171,35 @@ impl PulseAudioOutput {
             }
         }
     }
+
+    fn set_cork_state(&self, state: bool) -> bool {
+        let is_success = Arc::new(AtomicCell::new(false));
+
+        if let Some(ref stream) = self.playing {
+            let is_success_ref = is_success.clone();
+            self.mainloop.borrow_mut().lock();
+            let op = {
+                let mainloop = self.mainloop.clone();
+                stream.borrow_mut().set_corked_state(
+                    state,
+                    Some(Box::new(move |success| {
+                        is_success_ref.store(success);
+                        unsafe {
+                            (*mainloop.as_ptr()).signal(false);
+                        }
+                    })),
+                )
+            };
+
+            while op.get_state() != pulse::operation::State::Done {
+                self.mainloop.borrow_mut().wait();
+            }
+
+            self.mainloop.borrow_mut().unlock();
+        };
+
+        is_success.load()
+    }
 }
 
 impl AudioOutput for PulseAudioOutput {
@@ -315,55 +344,11 @@ impl AudioOutput for PulseAudioOutput {
     }
 
     fn unpause(&mut self) -> bool {
-        let uncork_success = Arc::new(AtomicCell::new(false));
-
-        if let Some(ref stream) = self.playing {
-            let uncork_success_ref = uncork_success.clone();
-            self.mainloop.borrow_mut().lock();
-            let op = {
-                let mainloop = self.mainloop.clone();
-                stream.borrow_mut().uncork(Some(Box::new(move |success| {
-                    uncork_success_ref.store(success);
-                    unsafe {
-                        (*mainloop.as_ptr()).signal(false);
-                    }
-                })))
-            };
-
-            while op.get_state() != pulse::operation::State::Done {
-                self.mainloop.borrow_mut().wait();
-            }
-
-            self.mainloop.borrow_mut().unlock();
-        };
-
-        uncork_success.load()
+        self.set_cork_state(false)
     }
 
     fn pause(&mut self) -> bool {
-        let cork_success = Arc::new(AtomicCell::new(false));
-
-        if let Some(ref stream) = self.playing {
-            let cork_success_ref = cork_success.clone();
-            self.mainloop.borrow_mut().lock();
-            let op = {
-                let mainloop = self.mainloop.clone();
-                stream.borrow_mut().cork(Some(Box::new(move |success| {
-                    cork_success_ref.store(success);
-                    unsafe {
-                        (*mainloop.as_ptr()).signal(false);
-                    }
-                })))
-            };
-
-            while op.get_state() != pulse::operation::State::Done {
-                self.mainloop.borrow_mut().wait();
-            }
-
-            self.mainloop.borrow_mut().unlock();
-        };
-
-        cork_success.load()
+        self.set_cork_state(true)
     }
 
     fn stop(&mut self) {

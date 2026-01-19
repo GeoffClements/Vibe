@@ -4,21 +4,20 @@
 // Required system dependencies:
 // - PulseAudio development libraries (libpulse-dev on Debian-based systems)
 
-use std::{cell::RefCell, ops::Deref, rc::Rc, time::Duration};
+use std::{cell::RefCell, ops::Deref, rc::Rc, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
-use crossbeam::channel::{bounded, Sender};
+use crossbeam::{
+    atomic::AtomicCell,
+    channel::{bounded, Sender},
+};
 use log::warn;
 use pulse::{
     callbacks::ListResult,
     context::{Context, FlagSet as CxFlagSet, State},
-    def::BufferAttr,
-    error::PAErr,
     mainloop::threaded::Mainloop,
-    operation::Operation,
     sample::Spec,
-    stream::{FlagSet as SmFlagSet, SeekMode},
-    volume::ChannelVolumes,
+    stream::{FlagSet as SmFlagSet, SeekMode, Stream},
 };
 
 use crate::{
@@ -30,107 +29,11 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
-#[derive(Clone)]
-pub struct Stream {
-    inner: Rc<RefCell<pulse::stream::Stream>>,
-}
-
-impl Stream {
-    fn new(context: Rc<RefCell<Context>>, decoder: &Decoder) -> Option<Self> {
-        let spec = Spec {
-            format: pulse::sample::Format::F32le,
-            rate: decoder.sample_rate(),
-            channels: decoder.channels(),
-        };
-
-        // Create a pulseaudio stream
-        let stream =
-            pulse::stream::Stream::new(&mut (*context).borrow_mut(), "Music", &spec, None)?;
-
-        Some(Self {
-            inner: Rc::new(RefCell::new(stream)),
-        })
-    }
-
-    fn into_inner(self) -> Rc<RefCell<pulse::stream::Stream>> {
-        self.inner
-    }
-
-    fn set_write_callback(&mut self, callback: Box<dyn FnMut(usize) + 'static>) {
-        (*self.inner)
-            .borrow_mut()
-            .set_write_callback(Some(callback));
-    }
-
-    fn unset_write_callback(&mut self) {
-        (*self.inner).borrow_mut().set_write_callback(None);
-    }
-
-    fn set_underflow_callback(&mut self, callback: Option<Box<dyn FnMut() + 'static>>) {
-        (*self.inner).borrow_mut().set_underflow_callback(callback)
-    }
-
-    fn disconnect(&mut self) -> Result<(), PAErr> {
-        (*self.inner).borrow_mut().disconnect()
-    }
-
-    fn set_state_callback(&mut self, callback: Option<Box<dyn FnMut() + 'static>>) {
-        (*self.inner).borrow_mut().set_state_callback(callback)
-    }
-
-    fn connect_playback(
-        &mut self,
-        dev: Option<&str>,
-        attr: Option<&BufferAttr>,
-        flags: SmFlagSet,
-        volume: Option<&ChannelVolumes>,
-        sync_stream: Option<&mut pulse::stream::Stream>,
-    ) -> Result<(), PAErr> {
-        (*self.inner)
-            .borrow_mut()
-            .connect_playback(dev, attr, flags, volume, sync_stream)
-    }
-
-    fn get_state(&self) -> pulse::stream::State {
-        (*self.inner).borrow_mut().get_state()
-    }
-
-    fn play(&mut self) {
-        let op = (*self.inner).borrow_mut().uncork(None);
-        self.do_op(op);
-    }
-
-    fn pause(&mut self) {
-        (*self.inner).borrow_mut().cork(None);
-    }
-
-    fn unpause(&mut self) {
-        self.play();
-    }
-
-    fn get_pos(&self) -> Duration {
-        let micros = match (*self.inner).borrow().get_time() {
-            Ok(Some(micros)) => micros,
-            _ => pulse::time::MicroSeconds(0),
-        };
-
-        Duration::from_micros(micros.0)
-    }
-
-    fn do_op(&self, op: Operation<dyn FnMut(bool)>) {
-        std::thread::spawn(move || {
-            while op.get_state() == pulse::operation::State::Running {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        });
-    }
-}
-
 pub struct PulseAudioOutput {
     mainloop: Rc<RefCell<Mainloop>>,
     context: Rc<RefCell<Context>>,
-    playing: Option<Stream>,
-    next_up: Option<Stream>,
+    playing: Option<Rc<RefCell<Stream>>>,
+    next_up: Option<Rc<RefCell<Stream>>>,
 }
 
 impl PulseAudioOutput {
@@ -195,7 +98,7 @@ impl PulseAudioOutput {
 
     fn connect_stream(
         &mut self,
-        mut stream: Stream,
+        stream: &mut Rc<RefCell<Stream>>,
         device: &Option<String>,
     ) -> anyhow::Result<()> {
         (*self.mainloop).borrow_mut().lock();
@@ -204,25 +107,29 @@ impl PulseAudioOutput {
         {
             let mainloop_ref = self.mainloop.clone();
             let stream_ref = self.context.clone();
-            stream.set_state_callback(Some(Box::new(move || {
-                let state = unsafe { (*stream_ref.as_ptr()).get_state() };
-                match state {
-                    State::Ready | State::Failed | State::Terminated => unsafe {
-                        (*mainloop_ref.as_ptr()).signal(false);
-                    },
-                    _ => {}
-                }
-            })));
+            stream
+                .borrow_mut()
+                .set_state_callback(Some(Box::new(move || {
+                    let state = unsafe { (*stream_ref.as_ptr()).get_state() };
+                    match state {
+                        State::Ready | State::Failed | State::Terminated => unsafe {
+                            (*mainloop_ref.as_ptr()).signal(false);
+                        },
+                        _ => {}
+                    }
+                })));
         }
 
         let flags =
             SmFlagSet::START_CORKED | SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::INTERPOLATE_TIMING;
 
-        stream.connect_playback(device.as_deref(), None, flags, None, None)?;
+        stream
+            .borrow_mut()
+            .connect_playback(device.as_deref(), None, flags, None, None)?;
 
         // Wait for stream to be ready
         loop {
-            match stream.get_state() {
+            match stream.borrow().get_state() {
                 pulse::stream::State::Ready => {
                     break;
                 }
@@ -239,26 +146,19 @@ impl PulseAudioOutput {
             }
         }
 
-        stream.set_state_callback(None);
+        stream.borrow_mut().set_state_callback(None);
         (*self.mainloop).borrow_mut().unlock();
 
         Ok(())
     }
 
     fn play(&mut self) -> bool {
-        if let Some(ref mut stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            stream.play();
-            (*self.mainloop).borrow_mut().unlock();
-            true
-        } else {
-            false
-        }
+        self.unpause()
     }
 
     fn enqueue(
         &mut self,
-        stream: Stream,
+        stream: Rc<RefCell<Stream>>,
         autostart: slimproto::proto::AutoStart,
         _stream_in: Sender<PlayerMsg>,
     ) {
@@ -311,130 +211,169 @@ impl AudioOutput for PulseAudioOutput {
             break;
         }
 
-        (*self.mainloop).borrow_mut().lock();
-        let mut stream = match Stream::new(self.context.clone(), &decoder) {
+        let spec = Spec {
+            format: pulse::sample::Format::F32le,
+            rate: decoder.sample_rate(),
+            channels: decoder.channels(),
+        };
+
+        self.mainloop.borrow_mut().lock();
+        let stream = match Stream::new(&mut self.context.borrow_mut(), "Music", &spec, None) {
             Some(stream) => stream,
             None => {
-                stream_in.send(PlayerMsg::NotSupported).ok();
+                let _ = stream_in.send(PlayerMsg::NotSupported);
                 return;
             }
         };
-        (*self.mainloop).borrow_mut().unlock();
+        self.mainloop.borrow_mut().unlock();
 
-        {
-            let mut start_flag = true;
-            let mut draining = false;
-            let drained = Rc::new(RefCell::new(false));
-            let stream_ref = Rc::downgrade(&stream.clone().into_inner());
-            let drained_ref = drained.clone();
-            let stream_in_ref = stream_in.clone();
-            (*self.mainloop).borrow_mut().lock();
-            stream.set_write_callback(Box::new(move |len| {
-                if *drained_ref.borrow() {
-                    return;
-                }
+        let mut stream = Rc::new(RefCell::new(stream));
 
-                if start_flag {
-                    stream_in_ref.send(PlayerMsg::TrackStarted).ok();
-                    start_flag = false;
-                }
+        let mut start_flag = true;
+        let mut draining = false;
+        let drained = Rc::new(RefCell::new(false));
+        let stream_ref = stream.clone();
+        let drained_ref = drained.clone();
+        let stream_in_ref = stream_in.clone();
+        let on_write = move |len: usize| {
+            if *drained_ref.borrow() {
+                return;
+            }
 
-                loop {
-                    match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
-                        Ok(()) => {}
+            if start_flag {
+                let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
+                start_flag = false;
+            }
 
-                        Err(DecoderError::EndOfDecode) => {
-                            if !draining {
-                                stream_in_ref.send(PlayerMsg::EndOfDecode).ok();
-                                draining = true;
-                            }
-                        }
+            loop {
+                match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
+                    Ok(()) => {}
 
-                        Err(DecoderError::StreamError(e)) => {
-                            warn!("Error reading data stream: {}", e);
-                            stream_in_ref.send(PlayerMsg::NotSupported).ok();
+                    Err(DecoderError::EndOfDecode) => {
+                        if !draining {
+                            let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
                             draining = true;
                         }
-
-                        Err(DecoderError::Retry) => {
-                            continue;
-                        }
                     }
-                    break;
-                }
 
-                if !audio_buf.is_empty() {
-                    let buf_len = audio_buf.len().min(len);
+                    Err(DecoderError::StreamError(e)) => {
+                        warn!("Error reading data stream: {}", e);
+                        let _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                        draining = true;
+                    }
 
-                    let offset =
-                        (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
-
-                    if let Some(stream) = stream_ref.upgrade() {
-                        unsafe {
-                            (*stream.as_ptr())
-                                .write_copy(
-                                    &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                                    offset,
-                                    SeekMode::Relative,
-                                )
-                                .ok();
-                        }
+                    Err(DecoderError::Retry) => {
+                        continue;
                     }
                 }
+                break;
+            }
 
-                if draining && audio_buf.is_empty() {
-                    *drained_ref.borrow_mut() = true;
+            if !audio_buf.is_empty() {
+                let buf_len = audio_buf.len().min(len);
+
+                let offset = (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
+
+                if let Some(stream) = unsafe { stream_ref.as_ptr().as_mut() } {
+                    let _ = stream.write_copy(
+                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                        offset,
+                        SeekMode::Relative,
+                    );
                 }
-            }));
+            }
 
-            // Add callback to detect end of track
-            let stream_in_ref = stream_in.clone();
-            stream.set_underflow_callback(Some(Box::new(move || {
+            if draining && audio_buf.is_empty() {
+                *drained_ref.borrow_mut() = true;
+            }
+        };
+
+        // Add callback to write audio data
+        (*self.mainloop).borrow_mut().lock();
+        stream
+            .borrow_mut()
+            .set_write_callback(Some(Box::new(on_write)));
+
+        // Add callback to detect end of track
+        let stream_in_ref = stream_in.clone();
+        stream
+            .borrow_mut()
+            .set_underflow_callback(Some(Box::new(move || {
                 if *drained.borrow() {
-                    stream_in_ref.send(PlayerMsg::Drained).ok();
+                    let _ = stream_in_ref.send(PlayerMsg::Drained);
                 }
             })));
-            (*self.mainloop).borrow_mut().unlock();
-        }
+        (*self.mainloop).borrow_mut().unlock();
 
         // Connect playback stream
-        if self.connect_stream(stream.clone(), device).is_err() {
+        if self.connect_stream(&mut stream, device).is_err() {
             return;
         }
 
-        stream_in.send(PlayerMsg::StreamEstablished).ok();
+        let _ = stream_in.send(PlayerMsg::StreamEstablished);
         self.enqueue(stream, stream_params.autostart, stream_in.clone());
     }
 
     fn unpause(&mut self) -> bool {
-        if let Some(ref mut stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            stream.unpause();
-            (*self.mainloop).borrow_mut().unlock();
-            true
-        } else {
-            false
-        }
+        let uncork_success = Arc::new(AtomicCell::new(false));
+
+        if let Some(ref stream) = self.playing {
+            let uncork_success_ref = uncork_success.clone();
+            self.mainloop.borrow_mut().lock();
+            let op = {
+                let mainloop = self.mainloop.clone();
+                stream.borrow_mut().uncork(Some(Box::new(move |success| {
+                    uncork_success_ref.store(success);
+                    unsafe {
+                        (*mainloop.as_ptr()).signal(false);
+                    }
+                })))
+            };
+
+            while op.get_state() != pulse::operation::State::Done {
+                self.mainloop.borrow_mut().wait();
+            }
+
+            self.mainloop.borrow_mut().unlock();
+        };
+
+        uncork_success.load()
     }
 
     fn pause(&mut self) -> bool {
-        if let Some(ref mut stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            stream.pause();
-            (*self.mainloop).borrow_mut().unlock();
-            true
-        } else {
-            false
-        }
+        let cork_success = Arc::new(AtomicCell::new(false));
+
+        if let Some(ref stream) = self.playing {
+            let cork_success_ref = cork_success.clone();
+            self.mainloop.borrow_mut().lock();
+            let op = {
+                let mainloop = self.mainloop.clone();
+                stream.borrow_mut().cork(Some(Box::new(move |success| {
+                    cork_success_ref.store(success);
+                    unsafe {
+                        (*mainloop.as_ptr()).signal(false);
+                    }
+                })))
+            };
+
+            while op.get_state() != pulse::operation::State::Done {
+                self.mainloop.borrow_mut().wait();
+            }
+
+            self.mainloop.borrow_mut().unlock();
+        };
+
+        cork_success.load()
     }
 
     fn stop(&mut self) {
-        if let Some(ref mut stream) = self.playing {
-            (*self.mainloop).borrow_mut().lock();
-            stream.unset_write_callback();
-            stream.disconnect().ok();
-            (*self.mainloop).borrow_mut().unlock();
+        if let Some(ref stream) = self.playing {
+            self.mainloop.borrow_mut().lock();
+            stream.borrow_mut().set_write_callback(None);
+            let _ = stream.borrow_mut().disconnect();
+            self.mainloop.borrow_mut().unlock();
         }
+
         self.next_up = None;
         self.playing = None;
     }
@@ -449,7 +388,14 @@ impl AudioOutput for PulseAudioOutput {
 
     fn get_dur(&self) -> Duration {
         match self.playing {
-            Some(ref stream) => stream.get_pos(),
+            Some(ref stream) => {
+                let dur = stream
+                    .borrow()
+                    .get_time()
+                    .unwrap_or_default()
+                    .unwrap_or_default();
+                Duration::from_micros(dur.0)
+            }
             None => Duration::ZERO,
         }
     }
@@ -484,6 +430,6 @@ impl AudioOutput for PulseAudioOutput {
 
 impl Drop for PulseAudioOutput {
     fn drop(&mut self) {
-        (*self.context).borrow_mut().disconnect();
+        self.context.borrow_mut().disconnect();
     }
 }

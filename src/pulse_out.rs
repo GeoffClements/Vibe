@@ -102,21 +102,19 @@ impl PulseAudioOutput {
         self.mainloop.borrow_mut().lock();
 
         // Stream state change callback
-        {
-            let mainloop_ref = self.mainloop.clone();
-            let stream_ref = self.context.clone();
-            stream
-                .borrow_mut()
-                .set_state_callback(Some(Box::new(move || {
-                    let state = unsafe { (*stream_ref.as_ptr()).get_state() };
-                    match state {
-                        State::Ready | State::Failed | State::Terminated => unsafe {
-                            (*mainloop_ref.as_ptr()).signal(false);
-                        },
-                        _ => {}
-                    }
-                })));
-        }
+        let mainloop_ref = self.mainloop.clone();
+        let stream_ref = self.context.clone();
+        stream
+            .borrow_mut()
+            .set_state_callback(Some(Box::new(move || {
+                let state = unsafe { (*stream_ref.as_ptr()).get_state() };
+                match state {
+                    State::Ready | State::Failed | State::Terminated => unsafe {
+                        (*mainloop_ref.as_ptr()).signal(false);
+                    },
+                    _ => {}
+                }
+            })));
 
         let flags =
             SmFlagSet::START_CORKED | SmFlagSet::AUTO_TIMING_UPDATE | SmFlagSet::INTERPOLATE_TIMING;

@@ -369,15 +369,9 @@ pub fn process_stream_msg(
             }
         }
 
-        #[cfg(not(feature = "notify"))]
-        PlayerMsg::Decoder((decoder, stream_params)) => {
-            if let Some(output) = output {
-                output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
-            }
-        }
-
-        #[cfg(feature = "notify")]
+        #[allow(unused_mut)]
         PlayerMsg::Decoder((mut decoder, stream_params)) => {
+            #[cfg(feature = "notify")]
             if let Some(metadata) = decoder.metadata() {
                 if !quiet {
                     notify(metadata);

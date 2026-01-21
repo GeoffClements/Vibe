@@ -194,7 +194,7 @@ impl AudioOutput for RodioAudioOutput {
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         _device: &Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         let autostart = stream_params.autostart == AutoStart::Auto;
 
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
@@ -204,13 +204,16 @@ impl AudioOutput for RodioAudioOutput {
 
         if let Some(ref mut playing_stream) = self.playing {
             playing_stream.play(decoder_source);
-        } else if let Ok(mut stream) = Stream::try_from_device(self.device.clone()) {
+        } else {
+            let mut stream = Stream::try_from_device(self.device.clone())?;
             stream.play(decoder_source);
             if !autostart {
                 stream.pause();
             }
             self.playing = Some(stream);
         }
+
+        Ok(())
     }
 
     fn unpause(&mut self) -> bool {

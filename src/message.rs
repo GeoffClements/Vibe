@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossbeam::channel::Sender;
-use log::{info, warn};
+use log::{error, info, warn};
 use slimproto::{status::StatusCode, ClientMessage, ServerMessage};
 
 #[cfg(feature = "notify")]
@@ -385,7 +385,11 @@ pub fn process_stream_msg(
             }
 
             if let Some(output) = output {
-                output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+                if let Err(e) =
+                    output.enqueue_new_stream(decoder, stream_in.clone(), stream_params, device)
+                {
+                    error!("{}", e);
+                }
             }
         }
     }

@@ -43,32 +43,30 @@ impl PulseAudioOutput {
         ));
 
         let context = Rc::new(RefCell::new(
-            Context::new((*mainloop).borrow_mut().deref(), "Vibe")
+            Context::new(mainloop.borrow_mut().deref(), "Vibe")
                 .ok_or(pulse::error::Code::ConnectionRefused)?,
         ));
 
         // Context state change callback
-        {
-            let mainloop_ref = mainloop.clone();
-            let context_ref = context.clone();
-            (*context)
-                .borrow_mut()
-                .set_state_callback(Some(Box::new(move || {
-                    let state = unsafe { (*context_ref.as_ptr()).get_state() };
-                    match state {
-                        State::Ready | State::Terminated | State::Failed => unsafe {
-                            (*mainloop_ref.as_ptr()).signal(false);
-                        },
-                        _ => {}
-                    }
-                })))
-        }
+        let mainloop_ref = mainloop.clone();
+        let context_ref = context.clone();
+        context
+            .borrow_mut()
+            .set_state_callback(Some(Box::new(move || {
+                let state = unsafe { (*context_ref.as_ptr()).get_state() };
+                match state {
+                    State::Ready | State::Terminated | State::Failed => unsafe {
+                        (*mainloop_ref.as_ptr()).signal(false);
+                    },
+                    _ => {}
+                }
+            })));
 
-        (*context)
+        context
             .borrow_mut()
             .connect(None, CxFlagSet::NOFLAGS, None)?;
-        (*mainloop).borrow_mut().lock();
-        (*mainloop).borrow_mut().start()?;
+        mainloop.borrow_mut().lock();
+        mainloop.borrow_mut().start()?;
 
         // Wait for context to be ready
         loop {
@@ -77,16 +75,16 @@ impl PulseAudioOutput {
                     break;
                 }
                 State::Failed | State::Terminated => {
-                    (*mainloop).borrow_mut().unlock();
-                    (*mainloop).borrow_mut().stop();
+                    mainloop.borrow_mut().unlock();
+                    mainloop.borrow_mut().stop();
                     return Err(anyhow!("Unable to connect with pulseaudio"));
                 }
-                _ => (*mainloop).borrow_mut().wait(),
+                _ => mainloop.borrow_mut().wait(),
             }
         }
 
-        (*context).borrow_mut().set_state_callback(None);
-        (*mainloop).borrow_mut().unlock();
+        context.borrow_mut().set_state_callback(None);
+        mainloop.borrow_mut().unlock();
 
         Ok(PulseAudioOutput {
             mainloop,
@@ -101,7 +99,7 @@ impl PulseAudioOutput {
         stream: &mut Rc<RefCell<Stream>>,
         device: &Option<String>,
     ) -> anyhow::Result<()> {
-        (*self.mainloop).borrow_mut().lock();
+        self.mainloop.borrow_mut().lock();
 
         // Stream state change callback
         {
@@ -134,20 +132,20 @@ impl PulseAudioOutput {
                     break;
                 }
                 pulse::stream::State::Failed | pulse::stream::State::Terminated => {
-                    (*self.mainloop).borrow_mut().unlock();
-                    (*self.mainloop).borrow_mut().stop();
+                    self.mainloop.borrow_mut().unlock();
+                    self.mainloop.borrow_mut().stop();
                     return Err(anyhow!(pulse::error::PAErr(
                         pulse::error::Code::ConnectionTerminated as i32,
                     )));
                 }
                 _ => {
-                    (*self.mainloop).borrow_mut().wait();
+                    self.mainloop.borrow_mut().wait();
                 }
             }
         }
 
         stream.borrow_mut().set_state_callback(None);
-        (*self.mainloop).borrow_mut().unlock();
+        self.mainloop.borrow_mut().unlock();
 
         Ok(())
     }
@@ -209,7 +207,7 @@ impl AudioOutput for PulseAudioOutput {
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         // Create an audio buffer to hold raw u8 samples
         let buf_size = {
             let num_samples = decoder.dur_to_samples(stream_params.output_threshold) as usize;
@@ -229,8 +227,8 @@ impl AudioOutput for PulseAudioOutput {
 
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
-                    stream_in.send(PlayerMsg::NotSupported).ok();
-                    return;
+                    let _ = stream_in.send(PlayerMsg::NotSupported);
+                    return Ok(());
                 }
 
                 Err(DecoderError::Retry) => {
@@ -251,7 +249,7 @@ impl AudioOutput for PulseAudioOutput {
             Some(stream) => stream,
             None => {
                 let _ = stream_in.send(PlayerMsg::NotSupported);
-                return;
+                return Ok(());
             }
         };
         self.mainloop.borrow_mut().unlock();
@@ -335,12 +333,12 @@ impl AudioOutput for PulseAudioOutput {
         (*self.mainloop).borrow_mut().unlock();
 
         // Connect playback stream
-        if self.connect_stream(&mut stream, device).is_err() {
-            return;
-        }
+        self.connect_stream(&mut stream, device)?;
 
         let _ = stream_in.send(PlayerMsg::StreamEstablished);
         self.enqueue(stream, stream_params.autostart, stream_in.clone());
+
+        Ok(())
     }
 
     fn unpause(&mut self) -> bool {

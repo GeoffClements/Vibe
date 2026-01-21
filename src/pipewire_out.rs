@@ -34,7 +34,10 @@ use pipewire::{
 };
 
 use crate::{
-    SKIP, StreamParams, audio_out::AudioOutput, decode::{Decoder, DecoderError}, message::PlayerMsg
+    audio_out::AudioOutput,
+    decode::{Decoder, DecoderError},
+    message::PlayerMsg,
+    StreamParams, SKIP,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
@@ -126,7 +129,7 @@ impl AudioOutput for PipewireAudioOutput {
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         // Create an audio buffer to hold raw u8 samples
         let buf_size = {
             let num_samples = decoder.dur_to_samples(stream_params.output_threshold) as usize;
@@ -147,7 +150,7 @@ impl AudioOutput for PipewireAudioOutput {
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     let _ = stream_in.send(PlayerMsg::NotSupported);
-                    return;
+                    return Ok(());
                 }
 
                 Err(DecoderError::Retry) => {
@@ -171,7 +174,7 @@ impl AudioOutput for PipewireAudioOutput {
             Ok(stream) => stream,
             Err(_) => {
                 let _ = stream_in.send(PlayerMsg::NotSupported);
-                return;
+                return Ok(());
             }
         };
 
@@ -283,16 +286,12 @@ impl AudioOutput for PipewireAudioOutput {
             let _ = stream_in_ref.send(PlayerMsg::Drained);
         };
 
-        let listener = match stream
+        let listener = stream
             .add_local_listener::<()>()
             .process(on_process)
             .drained(on_drained)
             .state_changed(on_state_change)
-            .register()
-        {
-            Ok(listener) => listener,
-            Err(_) => return,
-        };
+            .register()?;
 
         let pw_flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::INACTIVE;
 
@@ -326,12 +325,9 @@ impl AudioOutput for PipewireAudioOutput {
             Err(_) => None,
         };
 
-        if stream
-            .connect(Direction::Output, node_id, pw_flags, &mut params)
-            .is_err()
-        {
+        if let Err(e) = stream.connect(Direction::Output, node_id, pw_flags, &mut params) {
             let _ = stream_in.send(PlayerMsg::NotSupported);
-            return;
+            return Err(e.into());
         }
         drop(pw_lock);
 
@@ -341,6 +337,8 @@ impl AudioOutput for PipewireAudioOutput {
             stream_params.autostart,
             stream_in.clone(),
         );
+
+        Ok(())
     }
 
     fn flush(&mut self) {

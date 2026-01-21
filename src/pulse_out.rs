@@ -316,7 +316,7 @@ impl AudioOutput for PulseAudioOutput {
         };
 
         // Add callback to write audio data
-        (*self.mainloop).borrow_mut().lock();
+        self.mainloop.borrow_mut().lock();
         stream
             .borrow_mut()
             .set_write_callback(Some(Box::new(on_write)));
@@ -330,7 +330,7 @@ impl AudioOutput for PulseAudioOutput {
                     let _ = stream_in_ref.send(PlayerMsg::Drained);
                 }
             })));
-        (*self.mainloop).borrow_mut().unlock();
+        self.mainloop.borrow_mut().unlock();
 
         // Connect playback stream
         self.connect_stream(&mut stream, device)?;
@@ -387,8 +387,9 @@ impl AudioOutput for PulseAudioOutput {
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
 
-        (*self.mainloop).borrow_mut().lock();
-        let _op = (*self.context)
+        self.mainloop.borrow_mut().lock();
+        let _op = self
+            .context
             .borrow_mut()
             .introspect()
             .get_sink_info_list(move |list_result| match list_result {
@@ -401,7 +402,7 @@ impl AudioOutput for PulseAudioOutput {
                     s.send(None).ok();
                 }
             });
-        (*self.mainloop).borrow_mut().unlock();
+        self.mainloop.borrow_mut().unlock();
 
         while let Some(item) = r.recv()? {
             ret.push(item);

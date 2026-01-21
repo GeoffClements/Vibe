@@ -218,7 +218,7 @@ impl AudioOutput for RodioAudioOutput {
 
     fn unpause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
-            (*stream).unpause();
+            stream.unpause();
             return true;
         }
         false
@@ -226,7 +226,7 @@ impl AudioOutput for RodioAudioOutput {
 
     fn pause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
-            (*stream).pause();
+            stream.pause();
             return true;
         }
         false
@@ -234,7 +234,7 @@ impl AudioOutput for RodioAudioOutput {
 
     fn stop(&mut self) {
         if let Some(ref stream) = self.playing {
-            (*stream).stop();
+            stream.stop();
         }
         self.flush();
     }

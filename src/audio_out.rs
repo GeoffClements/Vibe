@@ -1,10 +1,11 @@
 use std::time::Duration;
 
-use anyhow;
 use crossbeam::channel::Sender;
 
 use crate::{decode::Decoder, message::PlayerMsg, StreamParams};
 
+#[cfg(feature = "pipewire")]
+use crate::pipewire_out::PipewireAudioOutput;
 #[cfg(feature = "pulse")]
 use crate::pulse_out::PulseAudioOutput;
 #[cfg(feature = "rodio")]
@@ -17,7 +18,7 @@ pub trait AudioOutput {
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
-    );
+    ) -> anyhow::Result<()>;
 
     fn unpause(&mut self) -> bool;
 
@@ -41,6 +42,8 @@ pub fn make_audio_output(
     Ok(match system {
         #[cfg(feature = "pulse")]
         "pulse" => Box::new(PulseAudioOutput::try_new()?),
+        #[cfg(feature = "pipewire")]
+        "pipewire" => Box::new(PipewireAudioOutput::try_new()?),
         #[cfg(feature = "rodio")]
         "rodio" => Box::new(RodioAudioOutput::try_new(device)?),
         _ => unreachable!(),

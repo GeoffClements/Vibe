@@ -2,8 +2,7 @@ name: Release Vibe
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']  # Triggers when pushing tags starting with 'v'
 
 jobs:
   release:
@@ -35,16 +34,18 @@ jobs:
   
   publish:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+    permissions:
+      id-token: write     # Required for OIDC token exchange
+    
+    steps:
+      - uses: actions/checkout@v5
+      
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
 
       - run: sudo apt-get update && sudo apt-get install -y libpulse-dev libdbus-1-dev
       
-      - uses: katyo/publish-crates@v2
-        with:
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

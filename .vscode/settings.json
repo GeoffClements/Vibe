@@ -1,7 +1,7 @@
 {
     "rust-analyzer.cargo.features": [
-        "symphonia/opt-simd",
         "rodio",
+        "pipewire",
         "notify"
     ],
     "cSpell.words": [
@@ -23,11 +23,13 @@
         "libdbus",
         "libpulse",
         "loglevel",
+        "Lyrion",
         "Mainloop",
         "Maxsamplerate",
         "NOFLAGS",
         "pcmchannels",
         "pcmsamplerate",
+        "pcmsamplesize",
         "pipewire",
         "pulseaudio",
         "rodio",

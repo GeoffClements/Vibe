@@ -1,50 +1,62 @@
-use std::{collections::HashMap, thread};
+// src/notify.rs
+// Desktop notification implementation
+//
+// Required system dependencies:
+// - dbus development libraries (libdbus-1-dev on Debian-based systems)
+// - package configuration tool (pkg-config on Debian-based systems)
+
+use std::{collections::HashMap, ops::Deref, thread};
 
 use notify_rust::Notification;
-use symphonia::core::meta::{MetadataRevision, StandardTagKey, Value};
+use symphonia::core::meta::{MetadataRevision, StandardTag};
 
 pub fn notify(metadata: MetadataRevision) {
     thread::spawn(move || {
-        let notify_tags = metadata.tags().iter().filter(|tag| tag.is_known()).fold(
-            HashMap::new(),
-            |mut tags, tag| {
-                match tag.std_key {
-                    Some(StandardTagKey::Artist) => {
-                        tags.entry("artist").or_insert_with(|| tag.value.to_owned());
+        let notify_tags = metadata
+            .media
+            .tags
+            .iter()
+            .fold(HashMap::new(), |mut tags, tag| {
+                match tag.std {
+                    Some(StandardTag::AlbumArtist(ref album_artist)) => {
+                        tags.insert("artist", album_artist.deref().clone());
                     }
 
-                    Some(StandardTagKey::AlbumArtist) => {
-                        tags.insert("artist", tag.value.to_owned());
+                    Some(StandardTag::Artist(ref artist)) => {
+                        tags.entry("artist").or_insert(artist.deref().clone());
                     }
 
-                    Some(StandardTagKey::Album) => {
-                        tags.insert("album", tag.value.to_owned());
+                    Some(StandardTag::Album(ref album)) => {
+                        tags.insert("album", album.deref().clone());
                     }
 
-                    Some(StandardTagKey::TrackTitle) => {
-                        tags.insert("track", tag.value.to_owned());
+                    Some(StandardTag::TrackTitle(ref track_title)) => {
+                        tags.insert("track", track_title.deref().clone());
                     }
 
-                    Some(StandardTagKey::Date) => {
-                        let year: Vec<String> = tag
-                            .value
-                            .to_string()
-                            .as_str()
-                            .split(&['-', '/'])
-                            .filter(|s| s.len() == 4)
-                            .map(|s| s.to_string())
+                    Some(StandardTag::RecordingDate(ref date)) => {
+                        let year: String = date
+                            .split('-')
+                            .map(|s| s.trim())
+                            .filter(|p| p.len() == 4)
+                            .take(1)
                             .collect();
-
-                        if let [.., last] = &year[..] {
-                            tags.insert("year", Value::String(last.to_owned()));
+                        if !year.is_empty() {
+                            tags.insert("year", year);
                         }
+                    }
+
+                    Some(StandardTag::ReleaseYear(ref year))
+                    | Some(StandardTag::OriginalReleaseYear(ref year))
+                    | Some(StandardTag::RecordingYear(ref year))
+                    | Some(StandardTag::OriginalRecordingYear(ref year)) => {
+                        tags.entry("year").or_insert(year.to_string());
                     }
 
                     _ => {}
                 }
                 tags
-            },
-        );
+            });
 
         let mut notification = String::new();
         if let Some(track) = notify_tags.get("track") {
@@ -61,7 +73,7 @@ pub fn notify(metadata: MetadataRevision) {
             if let Some(date) = notify_tags.get("year") {
                 notification.push_str(format!(" ({})", date).as_str());
             }
-            
+
             Notification::new()
                 .summary("Now playing")
                 .body(&notification)

@@ -1,3 +1,9 @@
+// src/rodio_out.rs
+// Rodio audio output implementation
+//
+// Required system dependencies:
+// - ALSA development libraries (libasound2-dev on Debian-based systems)
+
 use std::{collections::VecDeque, time::Duration};
 
 use anyhow::{self, bail, Context};
@@ -12,7 +18,7 @@ use crate::{
     audio_out::AudioOutput,
     decode::{Decoder, DecoderError},
     message::PlayerMsg,
-    StreamParams,
+    StreamParams, SKIP,
 };
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
@@ -20,23 +26,16 @@ const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 pub struct DecoderSource {
     decoder: Decoder,
     frame: VecDeque<f32>,
-    stream_params: StreamParams,
     stream_in: Sender<PlayerMsg>,
     start_flag: bool,
     eod_flag: bool,
 }
 
 impl DecoderSource {
-    fn new(
-        decoder: Decoder,
-        stream_params: StreamParams,
-        capacity: usize,
-        stream_in: Sender<PlayerMsg>,
-    ) -> Self {
+    fn new(decoder: Decoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
         DecoderSource {
             decoder,
             frame: VecDeque::with_capacity(capacity),
-            stream_params,
             stream_in,
             start_flag: true,
             eod_flag: false,
@@ -76,12 +75,13 @@ impl Iterator for DecoderSource {
 
         if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
             let mut audio_buf = Vec::with_capacity(self.frame.capacity());
+            let mut skip = SKIP.take();
+
             loop {
-                match self.decoder.fill_sample_buffer::<f32>(
-                    &mut audio_buf,
-                    Some(2 * MIN_AUDIO_BUFFER_SIZE),
-                    self.stream_params.volume.clone(),
-                ) {
+                match self
+                    .decoder
+                    .fill_sample_buffer(&mut audio_buf, Some(2 * MIN_AUDIO_BUFFER_SIZE))
+                {
                     Ok(()) => {}
 
                     Err(DecoderError::EndOfDecode) => {
@@ -101,9 +101,20 @@ impl Iterator for DecoderSource {
                     }
                 }
 
-                if audio_buf.len() > 0 {
+                if skip > Duration::ZERO {
+                    let samples_to_skip =
+                        self.decoder.dur_to_samples(skip).min(audio_buf.len() as _) as usize;
+                    audio_buf.drain(..samples_to_skip);
+                    skip = skip.saturating_sub(self.decoder.samples_to_dur(samples_to_skip as _));
+                    if audio_buf.is_empty() {
+                        continue;
+                    }
+                }
+
+                if !audio_buf.is_empty() {
                     self.frame.extend(audio_buf);
                 }
+
                 break;
             }
         }
@@ -123,8 +134,8 @@ struct Stream {
 impl Stream {
     fn try_from_device(device: Device) -> anyhow::Result<Self> {
         let output = OutputStreamBuilder::from_device(device)?.open_stream()?;
-        let sink = Sink::connect_new(&output.mixer());
-        
+        let sink = Sink::connect_new(output.mixer());
+
         Ok(Self {
             _output: output,
             sink,
@@ -158,7 +169,7 @@ impl RodioAudioOutput {
     pub fn try_new(device_name: &Option<String>) -> anyhow::Result<Self> {
         let host = rodio::cpal::default_host();
         let device = if let Some(dev_name) = device_name {
-            match find_device(&host, &dev_name) {
+            match find_device(&host, dev_name) {
                 Some(device) => device,
                 None => {
                     bail!("Cannot find device: {dev_name}");
@@ -183,31 +194,31 @@ impl AudioOutput for RodioAudioOutput {
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         _device: &Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         let autostart = stream_params.autostart == AutoStart::Auto;
 
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
-        let decoder_source =
-            DecoderSource::new(decoder, stream_params, capacity, stream_in.clone());
+        let decoder_source = DecoderSource::new(decoder, capacity, stream_in.clone());
 
         stream_in.send(PlayerMsg::StreamEstablished).ok();
 
         if let Some(ref mut playing_stream) = self.playing {
             playing_stream.play(decoder_source);
         } else {
-            if let Ok(mut stream) = Stream::try_from_device(self.device.clone()) {
-                stream.play(decoder_source);
-                if !autostart {
-                    stream.pause();
-                }
-                self.playing = Some(stream);
+            let mut stream = Stream::try_from_device(self.device.clone())?;
+            stream.play(decoder_source);
+            if !autostart {
+                stream.pause();
             }
+            self.playing = Some(stream);
         }
+
+        Ok(())
     }
 
     fn unpause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
-            (*stream).unpause();
+            stream.unpause();
             return true;
         }
         false
@@ -215,7 +226,7 @@ impl AudioOutput for RodioAudioOutput {
 
     fn pause(&mut self) -> bool {
         if let Some(ref stream) = self.playing {
-            (*stream).pause();
+            stream.pause();
             return true;
         }
         false
@@ -223,7 +234,7 @@ impl AudioOutput for RodioAudioOutput {
 
     fn stop(&mut self) {
         if let Some(ref stream) = self.playing {
-            (*stream).stop();
+            stream.stop();
         }
         self.flush();
     }

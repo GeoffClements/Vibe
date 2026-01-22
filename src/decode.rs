@@ -40,7 +40,6 @@ use crate::{message::PlayerMsg, StreamParams, STATUS, VOLUME};
 #[derive(Debug)]
 pub enum DecoderError {
     EndOfDecode,
-    // Unhandled,
     Retry,
     StreamError(symphonia::core::errors::Error),
 }

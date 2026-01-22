@@ -74,7 +74,7 @@ impl Iterator for DecoderSource {
         }
 
         if self.frame.len() < MIN_AUDIO_BUFFER_SIZE && !self.eod_flag {
-            let mut audio_buf = Vec::with_capacity(self.frame.capacity());
+            let mut audio_buf = Vec::<f32>::with_capacity(self.frame.capacity());
             let mut skip = SKIP.take();
 
             loop {

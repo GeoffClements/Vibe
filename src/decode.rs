@@ -177,7 +177,6 @@ impl Decoder {
         let mut audio_buffer: Vec<f32> = Vec::with_capacity(decoded.byte_len_as::<f32>());
         decoded.copy_to_vec_interleaved(&mut audio_buffer);
         audio_buffer
-            .as_mut_slice()
             .chunks_exact_mut(2)
             .for_each(|frame| {
                 if let [l, r] = frame {

@@ -133,7 +133,8 @@ struct Stream {
 
 impl Stream {
     fn try_from_device(device: Device) -> anyhow::Result<Self> {
-        let output = OutputStreamBuilder::from_device(device)?.open_stream()?;
+        let mut output = OutputStreamBuilder::from_device(device)?.open_stream()?;
+        output.log_on_drop(false);
         let sink = Sink::connect_new(output.mixer());
 
         Ok(Self {

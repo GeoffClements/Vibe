@@ -217,14 +217,30 @@ impl Decoder {
             buffer.reserve(limit - buffer.capacity());
         }
 
-        while buffer.len() < limit {
-            let audio_buffer: Vec<_> = self
-                .get_audio_buffer()?
-                .iter()
-                .flat_map(|s| s.to_le_bytes())
-                .collect();
+        // Safe Rust conversion of Vec<f32> to &[u8] with allocations
+        // while buffer.len() < limit {
+        //     let audio_buffer: Vec<_> = self
+        //         .get_audio_buffer()?
+        //         .iter()
+        //         .flat_map(|s| s.to_le_bytes())
+        //         .collect();
 
-            buffer.extend_from_slice(&audio_buffer[..]);
+        //     buffer.extend_from_slice(&audio_buffer[..]);
+        // }
+
+        // Unsafe Rust conversion of Vec<f32> to &[u8] without allocations
+        let mut buf;
+        while buffer.len() < limit {
+            let audio_buffer = {
+                buf = self.get_audio_buffer()?;
+                unsafe {
+                    // In place conversion
+                    // Safe because u8 is byte-aligned
+                    std::slice::from_raw_parts(buf.as_ptr() as _, buf.len() * size_of::<f32>())
+                }
+            };
+
+            buffer.extend_from_slice(audio_buffer);
         }
 
         Ok(())

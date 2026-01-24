@@ -6,6 +6,9 @@ sudo apt-get install -y --no-install-recommends \
     pkg-config \
     libpipewire-0.3-dev \
     libspa-0.2-dev \
-    libclang-dev
+    libclang-dev \
+    pipewire
 
 cargo install cargo-deb
+
+ln -s /run/user/1000/pipewire-0 /tmp/user/1000/pipewire-0

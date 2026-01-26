@@ -8,7 +8,7 @@ After=network-online.target sound.target
 
 [Service]
 Type=simple
-ExecStart={path}{server}{device}
+ExecStart={path}{server}{audio_sys}{device}
 Restart=on-failure
 
 [Install]
@@ -17,7 +17,11 @@ WantedBy=default.target
 
 const SERVICE_FILE_NAME: &str = "vibe.service";
 
-pub fn create_systemd_unit(server: &Option<String>, device: &Option<String>) -> anyhow::Result<()> {
+pub fn create_systemd_unit(
+    server: &Option<String>,
+    audio_sys: &String,
+    device: &Option<String>,
+) -> anyhow::Result<()> {
     let mut out_str = if let Some(server) = server {
         SERVICE_FILE_TEXT.replace("{server}", &format!(" --server {}", server))
     } else {
@@ -26,6 +30,8 @@ pub fn create_systemd_unit(server: &Option<String>, device: &Option<String>) -> 
 
     let path = which("vibe")?;
     out_str = out_str.replace("{path}", &path.to_string_lossy());
+
+    out_str = out_str.replace("{audio_sys}", &format!(" --system {}", audio_sys));
 
     out_str = if let Some(device) = device {
         out_str.replace("{device}", &format!(" --device {}", device))

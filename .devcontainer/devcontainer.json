@@ -21,6 +21,7 @@
 				"tombi-toml.tombi"
 			],
 			"settings": {
+				"cSpell.language": "en-GB",
 				"rust-analyzer.check.command": "clippy"
 			}
 		}

@@ -171,17 +171,6 @@ fn main() -> anyhow::Result<()> {
         .with_level(cli.loglevel)
         .init()?;
 
-    // Create a systemd unit file if requested
-    if cli.create_service {
-        if let Some(ref server) = cli.server {
-            _ = cli_server_parser(server).context(format!("Server not found: {}", server))?
-        }
-
-        startup::create_systemd_unit(&cli.server, &cli.system, &cli.device)?;
-
-        return Ok(());
-    }
-
     let output_system = {
         cfg_if! {
             if #[cfg(any(
@@ -195,8 +184,19 @@ fn main() -> anyhow::Result<()> {
             }
         }
     };
-    let mut output = None;
 
+    // Create a systemd unit file if requested
+    if cli.create_service {
+        if let Some(ref server) = cli.server {
+            _ = cli_server_parser(server).context(format!("Server not found: {}", server))?
+        }
+
+        startup::create_systemd_unit(&cli.server, &output_system, &cli.device)?;
+
+        return Ok(());
+    }
+
+    let mut output = None;
     // List the output devices and terminate
     if cli.list {
         if let Ok(output) = audio_out::make_audio_output(

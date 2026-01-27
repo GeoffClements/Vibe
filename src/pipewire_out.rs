@@ -389,11 +389,11 @@ impl AudioOutput for PipewireAudioOutput {
     }
 
     fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
-        let registry = self.core.get_registry()?;
-
         let mut ret = Vec::new();
         let (s, r) = bounded(1);
 
+        let lock = self.mainloop.lock();
+        let registry = self.core.get_registry()?;
         let _listener = registry
             .add_listener_local()
             .global(move |global| {
@@ -409,7 +409,7 @@ impl AudioOutput for PipewireAudioOutput {
             })
             .register();
 
-        self.mainloop.start();
+        drop(lock);
         while let Ok(item) = r.recv_timeout(Duration::from_millis(250)) {
             ret.push(item);
         }

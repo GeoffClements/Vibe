@@ -4,11 +4,7 @@ use slimproto::{
     self, discovery::discover, proto::Server, Capabilities, Capability, ClientMessage,
     FramedReader, FramedWriter, ServerMessage,
 };
-use std::{
-    net::SocketAddrV4,
-    thread::sleep,
-    time::Duration,
-};
+use std::{net::SocketAddrV4, thread::sleep, time::Duration};
 
 pub fn run(
     server_addr: Option<SocketAddrV4>,
@@ -24,12 +20,10 @@ pub fn run(
             },
         };
 
-        slim_rx_in
-            .send(Some(ServerMessage::Serv {
-                ip_address: (*server.socket.ip()),
-                sync_group_id: None,
-            }))
-            .ok();
+        _ = slim_rx_in.send(Some(ServerMessage::Serv {
+            ip_address: (*server.socket.ip()),
+            sync_group_id: None,
+        }));
 
         let syncgroupid = String::new();
         // Outer loop to reconnect to a different server and
@@ -95,24 +89,22 @@ pub fn run(
                                 } => {
                                     server = (ip, sgid).into();
                                     // Now inform the main thread
-                                    slim_rx_in
-                                        .send(Some(ServerMessage::Serv {
-                                            ip_address: ip,
-                                            sync_group_id: None,
-                                        }))
-                                        .ok();
+                                    _ = slim_rx_in.send(Some(ServerMessage::Serv {
+                                        ip_address: ip,
+                                        sync_group_id: None,
+                                    }));
                                     break 'inner;
                                 }
 
                                 _ => {
-                                    slim_rx_in.send(Some(msg)).ok();
+                                    _ = slim_rx_in.send(Some(msg));
                                 }
                             }
                         }
                     }
 
                     Err(_) => {
-                        slim_rx_in.send(None).ok();
+                        _ = slim_rx_in.send(None);
                         break 'outer;
                     }
                 }

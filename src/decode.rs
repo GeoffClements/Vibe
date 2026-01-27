@@ -286,7 +286,7 @@ pub fn make_decoder(
 
     let data_stream = make_connection(ip, server_port, http_headers)
         .context(format!("Unable to connect to data stream at {}", ip))?;
-    stream_in.send(PlayerMsg::Connected).ok();
+    _ = stream_in.send(PlayerMsg::Connected);
 
     let mut data_stream = SlimBuffer::with_capacity(
         threshold as usize * 1024,
@@ -296,7 +296,7 @@ pub fn make_decoder(
         None,
     );
 
-    stream_in.send(PlayerMsg::BufferThreshold).ok();
+    _ = stream_in.send(PlayerMsg::BufferThreshold);
 
     // Read until we encounter the end of headers (a blank line: "\r\n\r\n")
     {

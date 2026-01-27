@@ -144,12 +144,12 @@ impl AudioOutput for PipewireAudioOutput {
                 Ok(()) => {}
 
                 Err(DecoderError::EndOfDecode) => {
-                    let _ = stream_in.send(PlayerMsg::EndOfDecode);
+                    _ = stream_in.send(PlayerMsg::EndOfDecode);
                 }
 
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
-                    let _ = stream_in.send(PlayerMsg::NotSupported);
+                    _ = stream_in.send(PlayerMsg::NotSupported);
                     return Ok(());
                 }
 
@@ -173,7 +173,7 @@ impl AudioOutput for PipewireAudioOutput {
         ) {
             Ok(stream) => stream,
             Err(_) => {
-                let _ = stream_in.send(PlayerMsg::NotSupported);
+                _ = stream_in.send(PlayerMsg::NotSupported);
                 return Ok(());
             }
         };
@@ -192,14 +192,14 @@ impl AudioOutput for PipewireAudioOutput {
 
                     Err(DecoderError::EndOfDecode) => {
                         if !draining {
-                            let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                            _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
                             draining = true;
                         }
                     }
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
-                        let _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                        _ = stream_in_ref.send(PlayerMsg::NotSupported);
                         draining = true;
                     }
 
@@ -249,7 +249,7 @@ impl AudioOutput for PipewireAudioOutput {
                     }
                 }
             } else {
-                let _ = stream.flush(true);
+                _ = stream.flush(true);
             }
         };
 
@@ -263,18 +263,18 @@ impl AudioOutput for PipewireAudioOutput {
                 (StreamState::Connecting, StreamState::Paused)
                 | (StreamState::Connecting, StreamState::Streaming) => {
                     duration.store(0);
-                    let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
+                    _ = stream_in_ref.send(PlayerMsg::TrackStarted);
                 }
 
                 // (StreamState::Streaming, StreamState::Paused) => {
-                //     let _ = stream_in_ref.send(PlayerMsg::Pause);
+                //     _ = stream_in_ref.send(PlayerMsg::Pause);
                 // }
 
                 // (StreamState::Paused, StreamState::Streaming) => {
-                //     let _ = stream_in_ref.send(PlayerMsg::Unpause);
+                //     _ = stream_in_ref.send(PlayerMsg::Unpause);
                 // }
                 (StreamState::Error(_), _) | (_, StreamState::Error(_)) => {
-                    let _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                    _ = stream_in_ref.send(PlayerMsg::NotSupported);
                 }
 
                 _ => {}
@@ -283,7 +283,7 @@ impl AudioOutput for PipewireAudioOutput {
 
         let stream_in_ref = stream_in.clone();
         let on_drained = move |_stream: &Stream, _data: &mut _| {
-            let _ = stream_in_ref.send(PlayerMsg::Drained);
+            _ = stream_in_ref.send(PlayerMsg::Drained);
         };
 
         let listener = stream
@@ -326,12 +326,12 @@ impl AudioOutput for PipewireAudioOutput {
         };
 
         if let Err(e) = stream.connect(Direction::Output, node_id, pw_flags, &mut params) {
-            let _ = stream_in.send(PlayerMsg::NotSupported);
+            _ = stream_in.send(PlayerMsg::NotSupported);
             return Err(e.into());
         }
         drop(pw_lock);
 
-        let _ = stream_in.send(PlayerMsg::StreamEstablished);
+        _ = stream_in.send(PlayerMsg::StreamEstablished);
         self.enqueue(
             (stream, listener),
             stream_params.autostart,
@@ -361,8 +361,8 @@ impl AudioOutput for PipewireAudioOutput {
     fn shift(&mut self) {
         let _pw_lock = self.mainloop.lock();
         if let Some(ref mut stream) = self.playing {
-            let _ = stream.0.set_active(false);
-            let _ = stream.0.disconnect();
+            _ = stream.0.set_active(false);
+            _ = stream.0.disconnect();
         }
         self.playing = self.next_up.take();
     }
@@ -370,13 +370,13 @@ impl AudioOutput for PipewireAudioOutput {
     fn stop(&mut self) {
         let _pw_lock = self.mainloop.lock();
         if let Some(ref mut stream) = self.playing {
-            let _ = stream.0.set_active(false);
-            let _ = stream.0.disconnect();
+            _ = stream.0.set_active(false);
+            _ = stream.0.disconnect();
         }
 
         if let Some(ref mut stream) = self.next_up {
-            let _ = stream.0.set_active(false);
-            let _ = stream.0.disconnect();
+            _ = stream.0.set_active(false);
+            _ = stream.0.disconnect();
         }
 
         self.playing = None;
@@ -402,7 +402,7 @@ impl AudioOutput for PipewireAudioOutput {
                         if props.get("media.class") == Some("Audio/Sink") {
                             let device_name = props.get("node.name").unwrap_or_default().to_owned();
                             let device_desc = props.get("node.description").map(|s| s.to_owned());
-                            let _ = s.send((device_name, device_desc));
+                            _ = s.send((device_name, device_desc));
                         }
                     }
                 }

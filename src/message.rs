@@ -52,7 +52,7 @@ pub fn process_slim_msg(
             log::info!("Name query from server");
             if let Ok(name) = name.read() {
                 info!("Sending name: {name}");
-                slim_tx_in.send(ClientMessage::Name(name.to_owned())).ok();
+                _ = slim_tx_in.send(ClientMessage::Name(name.to_owned()));
             }
         }
 
@@ -87,7 +87,7 @@ pub fn process_slim_msg(
                 status.set_timestamp(ts);
 
                 let msg = status.make_status_message(StatusCode::Timer);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -104,7 +104,7 @@ pub fn process_slim_msg(
                 status.set_output_buffer_fullness(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -121,7 +121,7 @@ pub fn process_slim_msg(
                 status.set_output_buffer_fullness(0);
                 info!("Player flushed");
                 let msg = status.make_status_message(StatusCode::Flushed);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -140,14 +140,14 @@ pub fn process_slim_msg(
                             status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                             status.set_elapsed_seconds(play_time.as_secs() as u32);
                             let msg = status.make_status_message(StatusCode::Pause);
-                            slim_tx_in.send(msg).ok();
+                            _ = slim_tx_in.send(msg);
                         }
                     }
                 } else if output.pause() {
                     let stream_in = stream_in.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(interval);
-                        stream_in.send(PlayerMsg::Unpause).ok();
+                        _ = stream_in.send(PlayerMsg::Unpause);
                     });
                 }
             }
@@ -169,7 +169,7 @@ pub fn process_slim_msg(
                             status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                             status.set_elapsed_seconds(play_time.as_secs() as u32);
                             let msg = status.make_status_message(StatusCode::Resume);
-                            slim_tx_in.send(msg).ok();
+                            _ = slim_tx_in.send(msg);
                         }
                     }
                 }
@@ -179,13 +179,13 @@ pub fn process_slim_msg(
                 let stream_in = stream_in.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(dur);
-                    stream_in.send(PlayerMsg::Unpause).ok();
+                    _ = stream_in.send(PlayerMsg::Unpause);
                     if let Ok(mut status) = STATUS.lock() {
                         info!("Sending resumed to server");
                         status.set_elapsed_milli_seconds(play_time.as_millis() as u32);
                         status.set_elapsed_seconds(play_time.as_secs() as u32);
                         let msg = status.make_status_message(StatusCode::Resume);
-                        slim_tx_in.send(msg).ok();
+                        _ = slim_tx_in.send(msg);
                     }
                 });
             }
@@ -239,11 +239,11 @@ pub fn process_slim_msg(
                             output_threshold,
                         ) {
                             Ok(decoder_params) => {
-                                stream_in_r.send(PlayerMsg::Decoder(decoder_params)).ok();
+                                _ = stream_in_r.send(PlayerMsg::Decoder(decoder_params));
                             }
                             Err(e) => {
                                 warn!("{}", e);
-                                stream_in_r.send(PlayerMsg::NotSupported).ok();
+                                _ = stream_in_r.send(PlayerMsg::NotSupported);
                             }
                         }
                     });
@@ -292,7 +292,7 @@ pub fn process_stream_msg(
             if let Ok(mut status) = STATUS.lock() {
                 info!("Decoder ready for new stream");
                 let msg = status.make_status_message(StatusCode::DecoderReady);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -321,7 +321,7 @@ pub fn process_stream_msg(
                     info!("Sending track unpaused by player");
                     if let Ok(mut status) = STATUS.lock() {
                         let msg = status.make_status_message(StatusCode::TrackStarted);
-                        slim_tx_in.send(msg).ok();
+                        _ = slim_tx_in.send(msg);
                     }
                 }
             }
@@ -331,7 +331,7 @@ pub fn process_stream_msg(
             if let Ok(mut status) = STATUS.lock() {
                 info!("Sending stream connected");
                 let msg = status.make_status_message(StatusCode::Connect);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -339,7 +339,7 @@ pub fn process_stream_msg(
             if let Ok(mut status) = STATUS.lock() {
                 info!("Sending buffer threshold reached");
                 let msg = status.make_status_message(StatusCode::BufferThreshold);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -347,7 +347,7 @@ pub fn process_stream_msg(
             warn!("Unsupported format");
             if let Ok(mut status) = STATUS.lock() {
                 let msg = status.make_status_message(StatusCode::NotSupported);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -355,7 +355,7 @@ pub fn process_stream_msg(
             if let Ok(mut status) = STATUS.lock() {
                 info!("Sending stream established");
                 let msg = status.make_status_message(StatusCode::StreamEstablished);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 
@@ -365,7 +365,7 @@ pub fn process_stream_msg(
                 status.set_elapsed_milli_seconds(0);
                 status.set_elapsed_seconds(0);
                 let msg = status.make_status_message(StatusCode::TrackStarted);
-                slim_tx_in.send(msg).ok();
+                _ = slim_tx_in.send(msg);
             }
         }
 

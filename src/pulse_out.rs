@@ -225,7 +225,7 @@ impl AudioOutput for PulseAudioOutput {
 
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
-                    let _ = stream_in.send(PlayerMsg::NotSupported);
+                    _ = stream_in.send(PlayerMsg::NotSupported);
                     return Ok(());
                 }
 
@@ -246,7 +246,7 @@ impl AudioOutput for PulseAudioOutput {
         let stream = match Stream::new(&mut self.context.borrow_mut(), "Music", &spec, None) {
             Some(stream) => stream,
             None => {
-                let _ = stream_in.send(PlayerMsg::NotSupported);
+                _ = stream_in.send(PlayerMsg::NotSupported);
                 return Ok(());
             }
         };
@@ -266,7 +266,7 @@ impl AudioOutput for PulseAudioOutput {
             }
 
             if start_flag {
-                let _ = stream_in_ref.send(PlayerMsg::TrackStarted);
+                _ = stream_in_ref.send(PlayerMsg::TrackStarted);
                 start_flag = false;
             }
 
@@ -276,14 +276,14 @@ impl AudioOutput for PulseAudioOutput {
 
                     Err(DecoderError::EndOfDecode) => {
                         if !draining {
-                            let _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                            _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
                             draining = true;
                         }
                     }
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
-                        let _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                        _ = stream_in_ref.send(PlayerMsg::NotSupported);
                         draining = true;
                     }
 
@@ -300,7 +300,7 @@ impl AudioOutput for PulseAudioOutput {
                 let offset = (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
 
                 if let Some(stream) = unsafe { stream_ref.as_ptr().as_mut() } {
-                    let _ = stream.write_copy(
+                    _ = stream.write_copy(
                         &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
                         offset,
                         SeekMode::Relative,
@@ -325,7 +325,7 @@ impl AudioOutput for PulseAudioOutput {
             .borrow_mut()
             .set_underflow_callback(Some(Box::new(move || {
                 if *drained.borrow() {
-                    let _ = stream_in_ref.send(PlayerMsg::Drained);
+                    _ = stream_in_ref.send(PlayerMsg::Drained);
                 }
             })));
         self.mainloop.borrow_mut().unlock();
@@ -333,7 +333,7 @@ impl AudioOutput for PulseAudioOutput {
         // Connect playback stream
         self.connect_stream(&mut stream, device)?;
 
-        let _ = stream_in.send(PlayerMsg::StreamEstablished);
+        _ = stream_in.send(PlayerMsg::StreamEstablished);
         self.enqueue(stream, stream_params.autostart, stream_in.clone());
 
         Ok(())
@@ -351,7 +351,7 @@ impl AudioOutput for PulseAudioOutput {
         if let Some(ref stream) = self.playing {
             self.mainloop.borrow_mut().lock();
             stream.borrow_mut().set_write_callback(None);
-            let _ = stream.borrow_mut().disconnect();
+            _ = stream.borrow_mut().disconnect();
             self.mainloop.borrow_mut().unlock();
         }
 

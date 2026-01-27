@@ -279,7 +279,7 @@ fn main() -> anyhow::Result<()> {
 
                     None => {
                         info!("Lost contact with server, resetting");
-                        slim_tx_in.send(ClientMessage::Bye(1)).ok();
+                        _ = slim_tx_in.send(ClientMessage::Bye(1));
                         if let Some(ref mut output) = output {
                             output.stop();
                         }
@@ -315,7 +315,7 @@ fn main() -> anyhow::Result<()> {
                         // status.set_timestamp(ts);
 
                         let msg = status.make_status_message(StatusCode::Timer);
-                        slim_tx_in.send(msg).ok();
+                        _ = slim_tx_in.send(msg);
                     }
                 }
             }

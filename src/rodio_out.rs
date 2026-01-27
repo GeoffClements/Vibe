@@ -69,7 +69,7 @@ impl Iterator for DecoderSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start_flag {
-            self.stream_in.send(PlayerMsg::TrackStarted).ok();
+            _ = self.stream_in.send(PlayerMsg::TrackStarted);
             self.start_flag = false;
         }
 
@@ -86,14 +86,14 @@ impl Iterator for DecoderSource {
 
                     Err(DecoderError::EndOfDecode) => {
                         if !self.eod_flag {
-                            self.stream_in.send(PlayerMsg::EndOfDecode).ok();
+                            _ = self.stream_in.send(PlayerMsg::EndOfDecode);
                             self.eod_flag = true;
                         }
                     }
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
-                        self.stream_in.send(PlayerMsg::NotSupported).ok();
+                        _ = self.stream_in.send(PlayerMsg::NotSupported);
                     }
 
                     Err(DecoderError::Retry) => {
@@ -120,7 +120,7 @@ impl Iterator for DecoderSource {
         }
 
         self.frame.pop_front().or_else(|| {
-            self.stream_in.send(PlayerMsg::Drained).ok();
+            _ = self.stream_in.send(PlayerMsg::Drained);
             None
         })
     }
@@ -201,7 +201,7 @@ impl AudioOutput for RodioAudioOutput {
         let capacity = decoder.dur_to_samples(stream_params.output_threshold) as usize;
         let decoder_source = DecoderSource::new(decoder, capacity, stream_in.clone());
 
-        stream_in.send(PlayerMsg::StreamEstablished).ok();
+        _ = stream_in.send(PlayerMsg::StreamEstablished);
 
         if let Some(ref mut playing_stream) = self.playing {
             playing_stream.play(decoder_source);

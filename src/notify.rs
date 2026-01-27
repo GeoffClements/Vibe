@@ -61,14 +61,13 @@ pub fn notify(metadata: MetadataRevision) {
             if let Some(date) = notify_tags.get("year") {
                 notification.push_str(format!(" ({})", date).as_str());
             }
-            
-            Notification::new()
+
+            _ = Notification::new()
                 .summary("Now playing")
                 .body(&notification)
                 .icon("emblem-music-symbolic")
                 .timeout(6000)
-                .show()
-                .ok();
+                .show();
         }
     });
 }

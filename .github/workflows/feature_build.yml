@@ -1,50 +1,108 @@
-name: Build Vibe
+name: Test Vibe Feature Builds
 
 on:
   push:
     branches:
       - master
-  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        features:
-          - ""
-          - "pulse"
-          - "pipewire"
-          - "rodio"
-          - "pulse,pipewire"
-          - "pulse,rodio"
-          - "pipewire,rodio"
-          - "pulse,pipewire,rodio"
-          - "pulse,rodio,pipewire,notify"
-        no-default:
-          - false
-          - true
-        exclude:
-          - no-default: true
+        include:
+          # Default feature set
+          - name: default
+            no_default: ""
             features: ""
-          - no-default: true
+
+          # Single backends (default features)
+          - name: pulse
+            no_default: ""
+            features: "pulse"
+          - name: pipewire
+            no_default: ""
+            features: "pipewire"
+          - name: rodio
+            no_default: ""
+            features: "rodio"
+
+          # Backend combinations (default features)
+          - name: pulse+pipewire
+            no_default: ""
+            features: "pulse,pipewire"
+          - name: pulse+rodio
+            no_default: ""
+            features: "pulse,rodio"
+          - name: pipewire+rodio
+            no_default: ""
+            features: "pipewire,rodio"
+          - name: pulse+pipewire+rodio
+            no_default: ""
+            features: "pulse,pipewire,rodio"
+
+          # Notify only (default features)
+          - name: notify
+            no_default: ""
             features: "notify"
+
+          # no-default-features + exactly one backend
+          - name: nd-pulse
+            no_default: "--no-default-features"
+            features: "pulse"
+          - name: nd-pipewire
+            no_default: "--no-default-features"
+            features: "pipewire"
+          - name: nd-rodio
+            no_default: "--no-default-features"
+            features: "rodio"
+
+          # no-default-features + notify + one backend
+          - name: nd-pulse+notify
+            no_default: "--no-default-features"
+            features: "pulse,notify"
+          - name: nd-pipewire+notify
+            no_default: "--no-default-features"
+            features: "pipewire,notify"
+          - name: nd-rodio+notify
+            no_default: "--no-default-features"
+            features: "rodio,notify"
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libpulse-dev libasound2-dev libdbus-1-dev ibpipewire-0.3-dev libspa-0.2-dev libclang-dev
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+          cache: true
 
-      - name: Install Rust
-        run: rustup install stable && rustup default stable
+      - name: Cache Rust registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build with features
+      - name: Install system dependencies
         run: |
-          if [ "${{ matrix.no-default }}" == "true" ]; then
-            cargo build --no-default-features --features "${{ matrix.features }}"
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libpulse-dev \
+            libasound2-dev \
+            libdbus-1-dev \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            libclang-dev
+
+      - name: Build
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo build ${{ matrix.no_default }} --features "${{ matrix.features }}"
           else
-            cargo build --features "${{ matrix.features }}"
+            cargo build ${{ matrix.no_default }}
           fi

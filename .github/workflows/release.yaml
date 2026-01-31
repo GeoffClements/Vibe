@@ -2,50 +2,60 @@ name: Release Vibe
 
 on:
   push:
-    tags: ['v*']  # Triggers when pushing tags starting with 'v'
+    tags: ['v*']
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write   # for crates.io OIDC
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Install Rust
-        run: rustup install stable && rustup default stable
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+      # Cache cargo-installed binaries (e.g. cargo-deb)
+      - name: Cache cargo bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-deb (if missing)
+        run: |
+          if ! command -v cargo-deb >/dev/null 2>&1; then
+            cargo install cargo-deb
+          fi
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpulse-dev libdbus-1-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpulse-dev \
+            libdbus-1-dev
 
       - name: Build Debian package
         run: cargo deb --manifest-path ./Cargo.toml
 
-      - name: Upload to GitHub Releases
+      - name: Upload Debian package to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: target/debian/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
-  publish:
-    runs-on: ubuntu-latest
 
-    permissions:
-      id-token: write     # Required for OIDC token exchange
-    
-    steps:
-      - uses: actions/checkout@v5
-      
-      - uses: rust-lang/crates-io-auth-action@v1
+      - name: Authenticate to crates.io
+        uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      - run: sudo apt-get update && sudo apt-get install -y libpulse-dev libdbus-1-dev
-      
-      - run: cargo publish
+      - name: Publish crate
+        run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

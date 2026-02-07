@@ -63,6 +63,9 @@ impl PipewireAudioOutput {
 
         let nodes = Arc::new(Mutex::new(HashMap::new()));
         let nodes_ref = nodes.clone();
+
+        mainloop.start();
+
         let listener = registry
             .add_listener_local()
             .global(move |global| {
@@ -80,8 +83,6 @@ impl PipewireAudioOutput {
                 }
             })
             .register();
-
-        mainloop.start();
 
         Ok(Self {
             mainloop,

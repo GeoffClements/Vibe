@@ -42,16 +42,18 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
+// Drop order is important here to ensure the mainloop is dropped last, 
+// as it may be needed for proper cleanup of other resources.
 pub struct PipewireAudioOutput {
-    mainloop: ThreadLoopRc,
-    _context: ContextRc,
-    core: CoreRc,
-    playing: Option<(StreamRc, StreamListener<()>)>,
-    next_up: Option<(StreamRc, StreamListener<()>)>,
-    duration: Arc<AtomicCell<u64>>, // in milliseconds
-    _registry: RegistryRc,
-    _listener: Listener,
     nodes: Arc<Mutex<HashMap<String, u32>>>,
+    _listener: Listener,
+    _registry: RegistryRc,
+    duration: Arc<AtomicCell<u64>>, // in milliseconds
+    next_up: Option<(StreamRc, StreamListener<()>)>,
+    playing: Option<(StreamRc, StreamListener<()>)>,
+    core: CoreRc,
+    _context: ContextRc,
+    mainloop: ThreadLoopRc,
 }
 
 impl PipewireAudioOutput {

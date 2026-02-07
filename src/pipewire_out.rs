@@ -421,3 +421,10 @@ impl AudioOutput for PipewireAudioOutput {
         Ok(ret)
     }
 }
+
+impl Drop for PipewireAudioOutput {
+    fn drop(&mut self) {
+        self.stop();
+        self.mainloop.stop();
+    }
+}

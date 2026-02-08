@@ -113,15 +113,19 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
         _ => (value, SLIM_PORT),
     };
 
-    // Use ToSocketAddrs to resolve host
-    let addrs = (host, port).to_socket_addrs()?;
-    for addr in addrs {
-        if let std::net::SocketAddr::V4(addr_v4) = addr {
-            return Ok(addr_v4);
-        }
-    }
+    // Use ToSocketAddrs to resolve host and pick the first IPv4 address
+    let addr = (host, port).to_socket_addrs()?
+        .filter_map(|a| {
+            if let std::net::SocketAddr::V4(v4) = a {
+                Some(v4)
+            } else {
+                None
+            }
+        })
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Could not resolve server address"))?;
 
-    Err(anyhow::anyhow!("Could not resolve server address"))
+    Ok(addr)
 }
 
 fn cli_default_system() -> String {

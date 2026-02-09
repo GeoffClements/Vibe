@@ -198,7 +198,7 @@ impl Decoder {
 
         while buffer.len() < limit {
             let audio_buffer = self.get_audio_buffer()?;
-            buffer.extend_from_slice(&audio_buffer[..]);
+            buffer.extend(audio_buffer);
         }
 
         Ok(())
@@ -239,7 +239,7 @@ impl Decoder {
                 }
             };
 
-            buffer.extend_from_slice(audio_buffer);
+            buffer.extend(audio_buffer);
         }
 
         Ok(())

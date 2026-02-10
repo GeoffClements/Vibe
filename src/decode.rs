@@ -174,7 +174,7 @@ impl Decoder {
             .map(|vol| (vol[0], vol[1]))
             .unwrap_or((0.5, 0.5));
 
-        let mut audio_buffer: Vec<f32> = Vec::with_capacity(decoded.byte_len_as::<f32>());
+        let mut audio_buffer = Vec::new(); // copy_to_vec_interleaved will resize this as needed
         decoded.copy_to_vec_interleaved(&mut audio_buffer);
         audio_buffer
             .chunks_exact_mut(2)

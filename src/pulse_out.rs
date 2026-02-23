@@ -11,7 +11,7 @@ use crossbeam::{
     atomic::AtomicCell,
     channel::{bounded, Sender},
 };
-use log::{info, warn};
+use log::warn;
 use pulse::{
     callbacks::ListResult,
     context::{Context, FlagSet as CxFlagSet, State},

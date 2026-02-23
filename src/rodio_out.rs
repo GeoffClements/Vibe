@@ -4,13 +4,14 @@
 // Required system dependencies:
 // - ALSA development libraries (libasound2-dev on Debian-based systems)
 
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, num::NonZero, time::Duration};
 
 use anyhow::{self, bail, Context};
 use crossbeam::channel::Sender;
 use log::warn;
 use rodio::{
-    cpal::traits::HostTrait, Device, DeviceTrait, OutputStream, OutputStreamBuilder, Sink, Source,
+    cpal::traits::HostTrait, nz, Device, DeviceSinkBuilder, DeviceTrait, MixerDeviceSink, Player,
+    Source,
 };
 use slimproto::proto::AutoStart;
 
@@ -51,15 +52,15 @@ impl Source for DecoderSource {
         }
     }
 
-    fn channels(&self) -> u16 {
-        self.decoder.channels() as u16
+    fn channels(&self) -> rodio::ChannelCount {
+        NonZero::new(self.decoder.channels() as u16).unwrap_or(nz!(2))
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.decoder.sample_rate()
+    fn sample_rate(&self) -> rodio::SampleRate {
+        NonZero::new(self.decoder.sample_rate()).unwrap_or(nz!(44100))
     }
 
-    fn total_duration(&self) -> Option<std::time::Duration> {
+    fn total_duration(&self) -> Option<Duration> {
         None
     }
 }
@@ -127,15 +128,15 @@ impl Iterator for DecoderSource {
 }
 
 struct Stream {
-    _output: OutputStream,
-    sink: Sink,
+    _output: MixerDeviceSink,
+    sink: Player,
 }
 
 impl Stream {
     fn try_from_device(device: Device) -> anyhow::Result<Self> {
-        let mut output = OutputStreamBuilder::from_device(device)?.open_stream()?;
+        let mut output = DeviceSinkBuilder::from_device(device)?.open_stream()?;
         output.log_on_drop(false);
-        let sink = Sink::connect_new(output.mixer());
+        let sink = Player::connect_new(output.mixer());
 
         Ok(Self {
             _output: output,
@@ -256,19 +257,22 @@ impl AudioOutput for RodioAudioOutput {
     }
 
     fn get_output_device_names(&self) -> anyhow::Result<Vec<(String, Option<String>)>> {
-        let devices = self.host.output_devices()?;
-        Ok(devices
-            .map(|d| d.name())
-            .filter(|n| n.is_ok())
-            .map(|n| (n.unwrap(), None))
-            .collect())
+        let device_names = self
+            .host
+            .output_devices()?
+            .filter(|d| d.supports_output())
+            .filter_map(|d| d.description().ok())
+            .map(|d| (d.name().to_owned(), d.manufacturer().map(|s| s.to_owned())))
+            .collect();
+
+        Ok(device_names)
     }
 }
 
 fn find_device(host: &rodio::cpal::Host, name: &String) -> Option<Device> {
     let mut output_devices = host.output_devices().ok()?;
-    output_devices.find(|d| match d.name() {
-        Ok(n) => n == *name,
+    output_devices.find(|d| match d.description() {
+        Ok(desc) => desc.name() == *name,
         Err(_) => false,
     })
 }

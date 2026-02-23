@@ -8,6 +8,7 @@ use anyhow::Context;
 #[allow(unused_imports)]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 
+use log::info;
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},
@@ -30,7 +31,7 @@ use crate::{message::PlayerMsg, StreamParams, STATUS, VOLUME};
 
 #[derive(Debug)]
 pub enum DecoderError {
-    EndOfDecode,
+    // EndOfDecode,
     // Unhandled,
     Retry,
     StreamError(symphonia::core::errors::Error),
@@ -39,7 +40,7 @@ pub enum DecoderError {
 impl std::fmt::Display for DecoderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DecoderError::EndOfDecode => write!(f, "End of decode stream"),
+            // DecoderError::EndOfDecode => write!(f, "End of decode stream"),
             // DecoderError::Unhandled => write!(f, "Unhandled format"),
             DecoderError::Retry => write!(f, "Decoder reset required"),
             DecoderError::StreamError(e) => write!(f, "{}", e),
@@ -147,43 +148,46 @@ impl Decoder {
         self.spec.sample_rate
     }
 
-    fn get_audio_buffer(&mut self) -> Result<Vec<f32>, DecoderError> {
-        let decoded = loop {
-            let packet = self
-                .reader
-                .next_packet()
-                .map_err(|err| match err {
-                    symphonia::core::errors::Error::ResetRequired => {
-                        self.decoder.reset();
-                        DecoderError::Retry
-                    }
-
-                    error => DecoderError::StreamError(error),
-                })?
-                .ok_or(DecoderError::EndOfDecode)?;
-
-            match self.decoder.decode(&packet) {
-                symphonia::core::errors::Result::Ok(decoded) => break decoded,
-                Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-                Err(e) => return Err(DecoderError::StreamError(e)),
+    fn get_audio_buffer(&mut self) -> Result<Option<Vec<f32>>, DecoderError> {
+        let packet = self.reader.next_packet().map_err(|err| match err {
+            // Convert a Symphonia ResetRquired to our Retry
+            symphonia::core::errors::Error::ResetRequired => {
+                self.decoder.reset();
+                DecoderError::Retry
             }
+
+            // Wrap all other Symphonia errors in our StreamError
+            err => DecoderError::StreamError(err),
+        })?;
+
+        let decoded = packet.map(|packet| {
+            self.decoder
+                .decode(&packet)
+                .map_err(|err| DecoderError::StreamError(err))
+        });
+
+        let decoded = match decoded {
+            Some(Ok(decoded)) => Some(decoded),
+            Some(Err(err)) => return Err(err),
+            None => return Ok(None),
         };
 
-        let (left_volume, right_volume) = VOLUME
-            .lock()
-            .map(|vol| (vol[0], vol[1]))
-            .unwrap_or((0.5, 0.5));
+        let audio_buffer = decoded.map(|decoded| {
+            let (left_volume, right_volume) = VOLUME
+                .lock()
+                .map(|vol| (vol[0], vol[1]))
+                .unwrap_or((0.5, 0.5));
 
-        let mut audio_buffer = Vec::new(); // copy_to_vec_interleaved will resize this as needed
-        decoded.copy_to_vec_interleaved(&mut audio_buffer);
-        audio_buffer
-            .chunks_exact_mut(2)
-            .for_each(|frame| {
+            let mut audio_buffer = Vec::new(); // copy_to_vec_interleaved will resize this as needed
+            decoded.copy_to_vec_interleaved(&mut audio_buffer);
+            audio_buffer.chunks_exact_mut(2).for_each(|frame| {
                 if let [l, r] = frame {
                     *l *= left_volume;
                     *r *= right_volume;
                 }
             });
+            audio_buffer
+        });
 
         Ok(audio_buffer)
     }
@@ -193,15 +197,20 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<f32>,
         limit: Option<usize>,
-    ) -> Result<(), DecoderError> {
+    ) -> Result<bool, DecoderError> {
         let limit = limit.unwrap_or_else(|| buffer.capacity().max(1024));
+        let mut end_of_decode = false;
 
-        while buffer.len() < limit {
+        while buffer.len() < limit && !end_of_decode {
             let audio_buffer = self.get_audio_buffer()?;
-            buffer.extend(audio_buffer);
+            if let Some(audio_buffer) = audio_buffer {
+                buffer.extend(audio_buffer);
+            } else {
+                end_of_decode = true;
+            }
         }
 
-        Ok(())
+        Ok(end_of_decode)
     }
 
     #[cfg(any(feature = "pulse", feature = "pipewire"))]
@@ -209,8 +218,9 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<u8>,
         limit: Option<usize>,
-    ) -> Result<(), DecoderError> {
+    ) -> Result<bool, DecoderError> {
         let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
+        let mut end_of_decode = false;
 
         if limit > buffer.capacity() {
             buffer.reserve(limit - buffer.capacity());
@@ -229,20 +239,21 @@ impl Decoder {
 
         // Unsafe Rust conversion of Vec<f32> to &[u8] without allocations
         let mut buf;
-        while buffer.len() < limit {
-            let audio_buffer = {
-                buf = self.get_audio_buffer()?;
-                unsafe {
+        while buffer.len() < limit && !end_of_decode {
+            buf = self.get_audio_buffer()?;
+            if let Some(buf) = buf {
+                let audio_buffer = unsafe {
                     // In place conversion
                     // Safe because u8 is byte-aligned
                     std::slice::from_raw_parts(buf.as_ptr() as _, buf.len() * size_of::<f32>())
-                }
+                };
+                buffer.extend(audio_buffer);
+            } else {
+                end_of_decode = true
             };
-
-            buffer.extend(audio_buffer);
         }
 
-        Ok(())
+        Ok(end_of_decode)
     }
 
     #[cfg(feature = "notify")]

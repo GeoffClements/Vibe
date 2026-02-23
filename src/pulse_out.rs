@@ -11,7 +11,7 @@ use crossbeam::{
     atomic::AtomicCell,
     channel::{bounded, Sender},
 };
-use log::warn;
+use log::{info, warn};
 use pulse::{
     callbacks::ListResult,
     context::{Context, FlagSet as CxFlagSet, State},
@@ -217,12 +217,11 @@ impl AudioOutput for PulseAudioOutput {
         // Prefill audio buffer to threshold
         loop {
             match decoder.fill_raw_buffer(&mut audio_buf, None) {
-                Ok(()) => {}
+                Ok(_) => {}
 
-                Err(DecoderError::EndOfDecode) => {
-                    stream_in.send(PlayerMsg::EndOfDecode).ok();
-                }
-
+                // Err(DecoderError::EndOfDecode) => {
+                //     stream_in.send(PlayerMsg::EndOfDecode).ok();
+                // }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     _ = stream_in.send(PlayerMsg::NotSupported);
@@ -232,7 +231,7 @@ impl AudioOutput for PulseAudioOutput {
                 Err(DecoderError::Retry) => {
                     continue;
                 }
-            }
+            };
             break;
         }
 
@@ -261,7 +260,7 @@ impl AudioOutput for PulseAudioOutput {
         let drained_ref = drained.clone();
         let stream_in_ref = stream_in.clone();
         let on_write = move |len: usize| {
-            if *drained_ref.borrow() {
+            if draining || *drained_ref.borrow() {
                 return;
             }
 
@@ -270,29 +269,23 @@ impl AudioOutput for PulseAudioOutput {
                 start_flag = false;
             }
 
-            loop {
-                match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
-                    Ok(()) => {}
-
-                    Err(DecoderError::EndOfDecode) => {
-                        if !draining {
-                            _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                            draining = true;
-                        }
-                    }
+            let end_of_decode = loop {
+                let eod = match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
+                    Ok(eod) => eod,
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         _ = stream_in_ref.send(PlayerMsg::NotSupported);
                         draining = true;
+                        true
                     }
 
                     Err(DecoderError::Retry) => {
                         continue;
                     }
-                }
-                break;
-            }
+                };
+                break eod;
+            };
 
             if !audio_buf.is_empty() {
                 let buf_len = audio_buf.len().min(len);
@@ -306,6 +299,11 @@ impl AudioOutput for PulseAudioOutput {
                         SeekMode::Relative,
                     );
                 }
+            }
+
+            if end_of_decode {
+                _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                draining = true;
             }
 
             if draining && audio_buf.is_empty() {

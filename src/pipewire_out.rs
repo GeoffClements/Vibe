@@ -42,7 +42,7 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
-// Drop order is important here to ensure the mainloop is dropped last, 
+// Drop order is important here to ensure the mainloop is dropped last,
 // as it may be needed for proper cleanup of other resources.
 pub struct PipewireAudioOutput {
     nodes: Arc<Mutex<HashMap<String, u32>>>,
@@ -144,12 +144,11 @@ impl AudioOutput for PipewireAudioOutput {
         // Prefill audio buffer to threshold
         loop {
             match decoder.fill_raw_buffer(&mut audio_buf, None) {
-                Ok(()) => {}
+                Ok(_) => {}
 
-                Err(DecoderError::EndOfDecode) => {
-                    _ = stream_in.send(PlayerMsg::EndOfDecode);
-                }
-
+                // Err(DecoderError::EndOfDecode) => {
+                //     _ = stream_in.send(PlayerMsg::EndOfDecode);
+                // }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     _ = stream_in.send(PlayerMsg::NotSupported);
@@ -159,7 +158,7 @@ impl AudioOutput for PipewireAudioOutput {
                 Err(DecoderError::Retry) => {
                     continue;
                 }
-            }
+            };
             break;
         }
 
@@ -181,54 +180,55 @@ impl AudioOutput for PipewireAudioOutput {
             }
         };
 
-        let mut draining = false;
+        // let mut draining = false;
         let duration = self.duration.clone();
         let stream_in_ref = stream_in.clone();
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
+        let mut draining = false;
         let on_process = move |stream: &Stream, _data: &mut _| {
             let mut skip_time = SKIP.take();
 
-            loop {
-                match decoder.fill_raw_buffer(&mut audio_buf, None) {
-                    Ok(()) => {}
+            let end_of_decode = if draining {
+                true
+            } else {
+                loop {
+                    let eod = match decoder.fill_raw_buffer(&mut audio_buf, None) {
+                        Ok(eod) => eod,
 
-                    Err(DecoderError::EndOfDecode) => {
-                        if !draining {
-                            _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                            draining = true;
+                        Err(DecoderError::StreamError(e)) => {
+                            warn!("Error reading data stream: {}", e);
+                            _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                            // draining = true;
+                            true
                         }
-                    }
 
-                    Err(DecoderError::StreamError(e)) => {
-                        warn!("Error reading data stream: {}", e);
-                        _ = stream_in_ref.send(PlayerMsg::NotSupported);
-                        draining = true;
-                    }
+                        Err(DecoderError::Retry) => {
+                            continue;
+                        }
+                    };
 
-                    Err(DecoderError::Retry) => {
-                        continue;
-                    }
+                    if skip_time > Duration::ZERO {
+                        let mut bytes_to_skip =
+                            (decoder.dur_to_samples(skip_time) * size_of::<f32>() as u64) as usize;
+                        bytes_to_skip = bytes_to_skip.min(audio_buf.len());
+                        audio_buf.drain(..bytes_to_skip);
+                        let actual_skip_time =
+                            decoder.samples_to_dur((bytes_to_skip / size_of::<f32>()) as _);
+                        duration.fetch_add(actual_skip_time.as_millis() as _);
+                        skip_time = skip_time.saturating_sub(actual_skip_time);
+
+                        if audio_buf.is_empty() {
+                            continue;
+                        }
+                    };
+                    break eod;
                 }
+            };
 
-                if skip_time > Duration::ZERO {
-                    let mut bytes_to_skip =
-                        (decoder.dur_to_samples(skip_time) * size_of::<f32>() as u64) as usize;
-                    bytes_to_skip = bytes_to_skip.min(audio_buf.len());
-                    audio_buf.drain(..bytes_to_skip);
-                    let actual_skip_time =
-                        decoder.samples_to_dur((bytes_to_skip / size_of::<f32>()) as _);
-                    duration.fetch_add(actual_skip_time.as_millis() as _);
-                    skip_time = skip_time.saturating_sub(actual_skip_time);
-
-                    if audio_buf.is_empty() {
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            if !audio_buf.is_empty() {
+            if audio_buf.is_empty() {
+                _ = stream.flush(true);
+            } else {
                 if let Some(mut pw_buf) = stream.dequeue_buffer() {
                     let data = &mut pw_buf.datas_mut()[0];
                     if let Some(buf_data) = data.data() {
@@ -251,8 +251,11 @@ impl AudioOutput for PipewireAudioOutput {
                         );
                     }
                 }
-            } else {
-                _ = stream.flush(true);
+            }
+
+            if end_of_decode && !draining {
+                _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                draining = true;
             }
         };
 

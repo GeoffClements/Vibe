@@ -162,7 +162,7 @@ impl Decoder {
         let decoded = packet.map(|packet| {
             self.decoder
                 .decode(&packet)
-                .map_err(|err| DecoderError::StreamError(err))
+                .map_err(DecoderError::StreamError)
         });
 
         let decoded = match decoded {

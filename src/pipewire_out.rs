@@ -228,28 +228,24 @@ impl AudioOutput for PipewireAudioOutput {
 
             if audio_buf.is_empty() {
                 _ = stream.flush(true);
-            } else {
-                if let Some(mut pw_buf) = stream.dequeue_buffer() {
-                    let data = &mut pw_buf.datas_mut()[0];
-                    if let Some(buf_data) = data.data() {
-                        let len = buf_data.len().min(audio_buf.len());
-                        buf_data[..len]
-                            .copy_from_slice(&audio_buf.drain(..len).collect::<Vec<u8>>());
+            } else if let Some(mut pw_buf) = stream.dequeue_buffer() {
+                let data = &mut pw_buf.datas_mut()[0];
+                if let Some(buf_data) = data.data() {
+                    let len = buf_data.len().min(audio_buf.len());
+                    buf_data[..len].copy_from_slice(&audio_buf.drain(..len).collect::<Vec<u8>>());
 
-                        if buf_data.len() > audio_buf.capacity() {
-                            audio_buf.reserve(buf_data.len() - audio_buf.capacity());
-                        }
-
-                        let chunk = data.chunk_mut();
-                        *chunk.offset_mut() = 0;
-                        *chunk.stride_mut() = (size_of::<f32>() * channels as usize) as _;
-                        *chunk.size_mut() = len as _;
-
-                        duration.fetch_add(
-                            (len * 1000 / (size_of::<f32>() * channels as usize * rate as usize))
-                                as _,
-                        );
+                    if buf_data.len() > audio_buf.capacity() {
+                        audio_buf.reserve(buf_data.len() - audio_buf.capacity());
                     }
+
+                    let chunk = data.chunk_mut();
+                    *chunk.offset_mut() = 0;
+                    *chunk.stride_mut() = (size_of::<f32>() * channels as usize) as _;
+                    *chunk.size_mut() = len as _;
+
+                    duration.fetch_add(
+                        (len * 1000 / (size_of::<f32>() * channels as usize * rate as usize)) as _,
+                    );
                 }
             }
 

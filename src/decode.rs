@@ -8,7 +8,6 @@ use anyhow::Context;
 #[allow(unused_imports)]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 
-use log::info;
 use slimproto::{
     buffer::SlimBuffer,
     proto::{PcmChannels, PcmSampleRate},

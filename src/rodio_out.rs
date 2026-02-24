@@ -260,7 +260,7 @@ impl AudioOutput for RodioAudioOutput {
             .output_devices()?
             .filter(|d| d.supports_output())
             .filter_map(|d| d.description().ok())
-            .map(|d| (d.name().to_owned(), d.manufacturer().map(|s| s.to_owned())))
+            .map(|d| (d.name().to_owned(), d.driver().map(|s| s.to_owned())))
             .collect();
 
         Ok(device_names)

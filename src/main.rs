@@ -114,7 +114,8 @@ fn cli_server_parser(value: &str) -> anyhow::Result<SocketAddrV4> {
     };
 
     // Use ToSocketAddrs to resolve host and pick the first IPv4 address
-    let addr = (host, port).to_socket_addrs()?
+    let addr = (host, port)
+        .to_socket_addrs()?
         .filter_map(|a| {
             if let std::net::SocketAddr::V4(v4) = a {
                 Some(v4)
@@ -216,7 +217,14 @@ fn main() -> anyhow::Result<()> {
                 .for_each(|(i, (name, description))| {
                     println!("{}: {}", i, name);
                     if let Some(desc) = description {
-                        println!("   {}", desc);
+                        let spaces = String::from_iter(std::iter::repeat(" ").take(if i < 10 {
+                            3
+                        } else if i < 100 {
+                            4
+                        } else {
+                            5
+                        }));
+                        println!("{}{}", spaces, desc);
                     }
                 });
             print!("Found {} device", names.len());

@@ -42,6 +42,12 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
+#[derive(PartialEq)]
+enum ProcessState {
+    Running,
+    Draining,
+}
+
 // Drop order is important here to ensure the mainloop is dropped last,
 // as it may be needed for proper cleanup of other resources.
 pub struct PipewireAudioOutput {
@@ -146,9 +152,6 @@ impl AudioOutput for PipewireAudioOutput {
             match decoder.fill_raw_buffer(&mut audio_buf, None) {
                 Ok(_) => {}
 
-                // Err(DecoderError::EndOfDecode) => {
-                //     _ = stream_in.send(PlayerMsg::EndOfDecode);
-                // }
                 Err(DecoderError::StreamError(e)) => {
                     warn!("Error reading data stream: {}", e);
                     _ = stream_in.send(PlayerMsg::NotSupported);
@@ -180,16 +183,20 @@ impl AudioOutput for PipewireAudioOutput {
             }
         };
 
-        // let mut draining = false;
         let duration = self.duration.clone();
         let stream_in_ref = stream_in.clone();
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
-        let mut draining = false;
+        let mut state = ProcessState::Running;
         let on_process = move |stream: &Stream, _data: &mut _| {
+            // Pipewire has a nasty habit of calling this callback even when
+            // all data had been written and we're in the process of draining.
+            // Therefore keep our own state to make sure we don't send multiple
+            // end-of-decode messages to the server.
+
             let mut skip_time = SKIP.take();
 
-            let end_of_decode = if draining {
+            let end_of_decode = if state == ProcessState::Draining {
                 true
             } else {
                 loop {
@@ -199,7 +206,7 @@ impl AudioOutput for PipewireAudioOutput {
                         Err(DecoderError::StreamError(e)) => {
                             warn!("Error reading data stream: {}", e);
                             _ = stream_in_ref.send(PlayerMsg::NotSupported);
-                            // draining = true;
+                            state = ProcessState::Draining;
                             true
                         }
 
@@ -249,9 +256,9 @@ impl AudioOutput for PipewireAudioOutput {
                 }
             }
 
-            if end_of_decode && !draining {
+            if end_of_decode && state == ProcessState::Running {
                 _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                draining = true;
+                state = ProcessState::Draining;
             }
         };
 
@@ -267,6 +274,10 @@ impl AudioOutput for PipewireAudioOutput {
                     duration.store(0);
                     _ = stream_in_ref.send(PlayerMsg::TrackStarted);
                 }
+
+                // These messages (pause, unpause) are taken care of in the main thread
+                // but may be useful if we move responsibilty for these
+                // messages into the decode thread (here)
 
                 // (StreamState::Streaming, StreamState::Paused) => {
                 //     _ = stream_in_ref.send(PlayerMsg::Pause);

@@ -29,6 +29,14 @@ use crate::{
 
 const MIN_AUDIO_BUFFER_SIZE: usize = 8 * 1024;
 
+#[derive(PartialEq)]
+enum WriteState {
+    Starting,
+    Running,
+    Draining,
+    Drained,
+}
+
 pub struct PulseAudioOutput {
     mainloop: Rc<RefCell<Mainloop>>,
     context: Rc<RefCell<Context>>,
@@ -252,62 +260,61 @@ impl AudioOutput for PulseAudioOutput {
         self.mainloop.borrow_mut().unlock();
 
         let mut stream = Rc::new(RefCell::new(stream));
-
-        let mut start_flag = true;
-        let mut draining = false;
-        let drained = Rc::new(RefCell::new(false));
         let stream_ref = stream.clone();
-        let drained_ref = drained.clone();
+        let state = Rc::new(RefCell::new(WriteState::Starting));
+        let state_ref = state.clone();
         let stream_in_ref = stream_in.clone();
         let on_write = move |len: usize| {
-            if draining || *drained_ref.borrow() {
+            // Pulseaudio has a nasty habit of calling this callback even when
+            // all data had been written and we're in the process of draining.
+            // Therefore keep our own state to make sure we don't send multiple
+            // end-of-decode messages to the server.
+
+            if *state_ref.borrow() == WriteState::Drained {
                 return;
             }
 
-            if start_flag {
+            if *state_ref.borrow() == WriteState::Starting {
                 _ = stream_in_ref.send(PlayerMsg::TrackStarted);
-                start_flag = false;
+                *state_ref.borrow_mut() = WriteState::Running;
             }
 
-            let end_of_decode = loop {
-                let eod = match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
-                    Ok(eod) => eod,
-
-                    Err(DecoderError::StreamError(e)) => {
-                        warn!("Error reading data stream: {}", e);
-                        _ = stream_in_ref.send(PlayerMsg::NotSupported);
-                        draining = true;
-                        true
-                    }
-
-                    Err(DecoderError::Retry) => {
-                        continue;
-                    }
+            if *state_ref.borrow() != WriteState::Draining {
+                let end_of_decode = loop {
+                    let eod = match decoder.fill_raw_buffer(&mut audio_buf, Some(len)) {
+                        Ok(eod) => eod,
+                        Err(DecoderError::StreamError(e)) => {
+                            warn!("Error reading data stream: {}", e);
+                            _ = stream_in_ref.send(PlayerMsg::NotSupported);
+                            *state_ref.borrow_mut() = WriteState::Draining;
+                            true
+                        }
+                        Err(DecoderError::Retry) => continue,
+                    };
+                    break eod;
                 };
-                break eod;
-            };
 
-            if !audio_buf.is_empty() {
-                let buf_len = audio_buf.len().min(len);
+                if !audio_buf.is_empty() {
+                    let buf_len = audio_buf.len().min(len);
+                    let offset =
+                        (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
+                    if let Some(stream) = unsafe { stream_ref.as_ptr().as_mut() } {
+                        _ = stream.write_copy(
+                            &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
+                            offset,
+                            SeekMode::Relative,
+                        );
+                    }
+                }
 
-                let offset = (decoder.dur_to_samples(SKIP.take()) * size_of::<f32>() as u64) as i64;
-
-                if let Some(stream) = unsafe { stream_ref.as_ptr().as_mut() } {
-                    _ = stream.write_copy(
-                        &audio_buf.drain(..buf_len).collect::<Vec<u8>>(),
-                        offset,
-                        SeekMode::Relative,
-                    );
+                if end_of_decode {
+                    _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
+                    *state_ref.borrow_mut() = WriteState::Draining;
                 }
             }
 
-            if end_of_decode {
-                _ = stream_in_ref.send(PlayerMsg::EndOfDecode);
-                draining = true;
-            }
-
-            if draining && audio_buf.is_empty() {
-                *drained_ref.borrow_mut() = true;
+            if *state_ref.borrow() == WriteState::Draining && audio_buf.is_empty() {
+                *state_ref.borrow_mut() = WriteState::Drained;
             }
         };
 
@@ -318,11 +325,12 @@ impl AudioOutput for PulseAudioOutput {
             .set_write_callback(Some(Box::new(on_write)));
 
         // Add callback to detect end of track
+        let state_ref = state.clone();
         let stream_in_ref = stream_in.clone();
         stream
             .borrow_mut()
             .set_underflow_callback(Some(Box::new(move || {
-                if *drained.borrow() {
+                if *state_ref.borrow() == WriteState::Drained {
                     _ = stream_in_ref.send(PlayerMsg::Drained);
                 }
             })));

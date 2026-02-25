@@ -50,17 +50,21 @@ impl std::fmt::Display for DecoderError {
 impl std::error::Error for DecoderError {}
 
 struct AudioSpec {
-    channels: u8,
+    channels: usize,
     sample_rate: u32,
 }
 
-pub struct Decoder {
+// Keep references to the Symphonia reader and decoder.
+// spec will be used to hold the number of channels and
+// sample rate from the server, or if self-describing,
+// the initial probe values. Used as a default.
+pub struct VibeDecoder {
     pub reader: Box<dyn FormatReader + 'static>,
     pub decoder: Box<dyn AudioDecoder>,
     spec: AudioSpec,
 }
 
-impl Decoder {
+impl VibeDecoder {
     pub fn try_new(
         mss: MediaSourceStream<'static>,
         format: slimproto::proto::Format,
@@ -94,25 +98,27 @@ impl Decoder {
             .default_track(TrackType::Audio)
             .context("Unable to find default track")?;
 
+        // Get sample rate and channel count from server, or if self-describing
+        // get the data from the probe, defaulting to popular values for audio
         let sample_rate = match pcmsamplerate {
-            PcmSampleRate::Rate(rate) => Ok(rate),
-            PcmSampleRate::SelfDescribing => match track.codec_params {
+            PcmSampleRate::Rate(rate) => rate,
+            PcmSampleRate::SelfDescribing => match &track.codec_params {
                 Some(CodecParameters::Audio(AudioCodecParameters {
-                    sample_rate: Some(sr),
+                    sample_rate: Some(sample_rate),
                     ..
-                })) => Ok(sr),
-                _ => Err(anyhow::Error::msg("Unable to set sample rate")),
+                })) => *sample_rate,
+                _ => 44100,
             },
-        }?;
+        };
 
         let channels = match pcmchannels {
-            PcmChannels::Mono => 1u8,
+            PcmChannels::Mono => 1,
             PcmChannels::Stereo => 2,
             PcmChannels::SelfDescribing => match &track.codec_params {
                 Some(CodecParameters::Audio(AudioCodecParameters {
                     channels: Some(channels),
                     ..
-                })) => channels.count() as u8,
+                })) => channels.count(),
                 _ => 2,
             },
         };
@@ -129,7 +135,7 @@ impl Decoder {
             .make_audio_decoder(audio_codec_params, &AudioDecoderOptions::default())
             .context("Unable to find suitable decoder")?;
 
-        Ok(Decoder {
+        Ok(VibeDecoder {
             reader,
             decoder,
             spec: AudioSpec {
@@ -139,12 +145,20 @@ impl Decoder {
         })
     }
 
-    pub fn channels(&self) -> u8 {
-        self.spec.channels
+    pub fn channels(&self) -> usize {
+        self.decoder
+            .codec_params()
+            .channels
+            .as_ref()
+            .map(|c| c.count())
+            .unwrap_or(self.spec.channels)
     }
 
     pub fn sample_rate(&self) -> u32 {
-        self.spec.sample_rate
+        self.decoder
+            .codec_params()
+            .sample_rate
+            .unwrap_or(self.spec.sample_rate)
     }
 
     fn get_audio_buffer(&mut self) -> Result<Option<Vec<f32>>, DecoderError> {
@@ -226,14 +240,15 @@ impl Decoder {
         }
 
         // Safe Rust conversion of Vec<f32> to &[u8] with allocations
-        // while buffer.len() < limit {
-        //     let audio_buffer: Vec<_> = self
-        //         .get_audio_buffer()?
-        //         .iter()
-        //         .flat_map(|s| s.to_le_bytes())
-        //         .collect();
-
-        //     buffer.extend_from_slice(&audio_buffer[..]);
+        // let mut buf;
+        // while buffer.len() < limit && !end_of_decode {
+        //     buf = self.get_audio_buffer()?;
+        //     if let Some(buf) = buf {
+        //         let audio_buffer: Vec<_> = buf.iter().flat_map(|s| s.to_le_bytes()).collect();
+        //         buffer.extend_from_slice(&audio_buffer[..]);
+        //     } else {
+        //         end_of_decode = true;
+        //     }
         // }
 
         // Unsafe Rust conversion of Vec<f32> to &[u8] without allocations
@@ -263,13 +278,12 @@ impl Decoder {
     #[allow(unused)]
     pub fn samples_to_dur(&self, samples: u64) -> Duration {
         Duration::from_millis(
-            samples * 1_000 / (self.spec.sample_rate as u64 * self.spec.channels as u64),
+            samples * 1_000 / (self.sample_rate() as u64 * self.channels() as u64),
         )
     }
 
     pub fn dur_to_samples(&self, dur: Duration) -> u64 {
-        self.spec.sample_rate as u64 * self.spec.channels as u64 * dur.as_micros() as u64
-            / 1_000_000
+        self.sample_rate() as u64 * self.channels() as u64 * dur.as_micros() as u64 / 1_000_000
     }
 }
 
@@ -287,7 +301,7 @@ pub fn make_decoder(
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
     output_threshold: Duration,
-) -> anyhow::Result<(Decoder, StreamParams)> {
+) -> anyhow::Result<(VibeDecoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
         default_ip
     } else {
@@ -326,7 +340,7 @@ pub fn make_decoder(
     );
 
     Ok((
-        Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
+        VibeDecoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
             output_threshold,

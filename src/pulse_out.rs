@@ -22,7 +22,7 @@ use pulse::{
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
+    decode::{VibeDecoder, DecoderError},
     message::PlayerMsg,
     StreamParams, SKIP,
 };
@@ -209,7 +209,7 @@ impl PulseAudioOutput {
 impl AudioOutput for PulseAudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        mut decoder: Decoder,
+        mut decoder: VibeDecoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,
@@ -246,7 +246,7 @@ impl AudioOutput for PulseAudioOutput {
         let spec = Spec {
             format: pulse::sample::Format::F32le,
             rate: decoder.sample_rate(),
-            channels: decoder.channels(),
+            channels: decoder.channels() as _,
         };
 
         self.mainloop.borrow_mut().lock();

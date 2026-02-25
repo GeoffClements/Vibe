@@ -17,7 +17,7 @@ use slimproto::proto::AutoStart;
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
+    decode::{VibeDecoder, DecoderError},
     message::PlayerMsg,
     StreamParams, SKIP,
 };
@@ -25,7 +25,7 @@ use crate::{
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 
 pub struct DecoderSource {
-    decoder: Decoder,
+    decoder: VibeDecoder,
     frame: VecDeque<f32>,
     stream_in: Sender<PlayerMsg>,
     start_flag: bool,
@@ -33,7 +33,7 @@ pub struct DecoderSource {
 }
 
 impl DecoderSource {
-    fn new(decoder: Decoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
+    fn new(decoder: VibeDecoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
         DecoderSource {
             decoder,
             frame: VecDeque::with_capacity(capacity),
@@ -190,7 +190,7 @@ impl RodioAudioOutput {
 impl AudioOutput for RodioAudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        decoder: Decoder,
+        decoder: VibeDecoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         _device: &Option<String>,

@@ -35,7 +35,7 @@ use pipewire::{
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
+    decode::{VibeDecoder, DecoderError},
     message::PlayerMsg,
     StreamParams, SKIP,
 };
@@ -134,7 +134,7 @@ impl PipewireAudioOutput {
 impl AudioOutput for PipewireAudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        mut decoder: Decoder,
+        mut decoder: VibeDecoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,

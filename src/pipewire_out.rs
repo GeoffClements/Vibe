@@ -35,7 +35,7 @@ use pipewire::{
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{VibeDecoder, DecoderError},
+    decode::{DecoderError, VibeDecoder},
     message::PlayerMsg,
     StreamParams, SKIP,
 };
@@ -247,11 +247,11 @@ impl AudioOutput for PipewireAudioOutput {
 
                     let chunk = data.chunk_mut();
                     *chunk.offset_mut() = 0;
-                    *chunk.stride_mut() = (size_of::<f32>() * channels as usize) as _;
+                    *chunk.stride_mut() = (size_of::<f32>() * channels) as _;
                     *chunk.size_mut() = len as _;
 
                     duration.fetch_add(
-                        (len * 1000 / (size_of::<f32>() * channels as usize * rate as usize)) as _,
+                        (len * 1000 / (size_of::<f32>() * channels * rate as usize)) as _,
                     );
                 }
             }

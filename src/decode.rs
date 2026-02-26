@@ -238,9 +238,8 @@ impl VibeDecoder {
         }
 
         // Safe Rust conversion of Vec<f32> to &[u8] with allocations
-        // let mut buf;
         // while buffer.len() < limit && !end_of_decode {
-        //     buf = self.get_audio_buffer()?;
+        //     let buf = self.get_audio_buffer()?;
         //     if let Some(buf) = buf {
         //         let audio_buffer: Vec<_> = buf.iter().flat_map(|s| s.to_le_bytes()).collect();
         //         buffer.extend_from_slice(&audio_buffer[..]);
@@ -250,9 +249,8 @@ impl VibeDecoder {
         // }
 
         // Unsafe Rust conversion of Vec<f32> to &[u8] without allocations
-        let mut buf;
         while buffer.len() < limit && !end_of_decode {
-            buf = self.get_audio_buffer()?;
+            let buf = self.get_audio_buffer()?;
             if let Some(buf) = buf {
                 let audio_buffer = unsafe {
                     // In place conversion

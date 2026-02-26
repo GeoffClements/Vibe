@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 #[allow(unused_imports)]
 use crossbeam::{atomic::AtomicCell, channel::Sender};
 
@@ -125,11 +125,9 @@ impl VibeDecoder {
 
         // Create a decoder for the track.
         let audio_codec_params = match &track.codec_params {
-            Some(CodecParameters::Audio(audio_codec_params)) => Ok(audio_codec_params),
-            _ => Err(anyhow::Error::msg(
-                "Unable to extract audio parameters from stream",
-            )),
-        }?;
+            Some(CodecParameters::Audio(audio_codec_params)) => audio_codec_params,
+            _ => bail!("Unable to extract audio parameters from stream"),
+        };
 
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(audio_codec_params, &AudioDecoderOptions::default())

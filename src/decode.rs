@@ -233,10 +233,6 @@ impl VibeDecoder {
         let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
         let mut end_of_decode = false;
 
-        if limit > buffer.capacity() {
-            buffer.reserve(limit - buffer.capacity());
-        }
-
         // Safe Rust conversion of Vec<f32> to &[u8] with allocations
         // while buffer.len() < limit && !end_of_decode {
         //     let buf = self.get_audio_buffer()?;

@@ -209,7 +209,7 @@ impl VibeDecoder {
         buffer: &mut Vec<f32>,
         limit: Option<usize>,
     ) -> Result<bool, DecoderError> {
-        let limit = limit.unwrap_or_else(|| buffer.capacity().max(1024));
+        let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
         let mut end_of_decode = false;
 
         while buffer.len() < limit && !end_of_decode {

@@ -109,7 +109,6 @@ impl PipewireAudioOutput {
         &mut self,
         stream: (StreamRc, StreamListener<()>),
         autostart: slimproto::proto::AutoStart,
-        _stream_in: Sender<PlayerMsg>,
     ) {
         if self.playing.is_some() {
             self.next_up = Some(stream);
@@ -345,11 +344,7 @@ impl AudioOutput for PipewireAudioOutput {
         drop(pw_lock);
 
         _ = stream_in.send(PlayerMsg::StreamEstablished);
-        self.enqueue(
-            (stream, listener),
-            stream_params.autostart,
-            stream_in.clone(),
-        );
+        self.enqueue((stream, listener), stream_params.autostart);
 
         Ok(())
     }

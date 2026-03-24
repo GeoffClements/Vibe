@@ -73,7 +73,7 @@ simple_logger = { version = "5.2.0", default-features = false, features = [
   "stderr",
 ] }
 slimproto = "0.1.25"
-symphonia = { git = "https://github.com/pdeljanov/Symphonia.git", branch = "dev-0.6", features = [
+symphonia = { version = "0.6.0-alpha.1", features = [
   "all-codecs",
   "all-formats",
 ] }

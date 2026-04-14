@@ -320,7 +320,7 @@ pub fn make_decoder(
         loop {
             line.clear();
             let bytes_read = data_stream.read_line(&mut line)?;
-            if bytes_read == 0 || line == "\r\n" {
+            if bytes_read == 0 || line == "\r\n" || line.len() > 8 * 1024 {
                 break;
             }
         }

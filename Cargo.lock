@@ -66,9 +66,9 @@ dependencies = [
 
 [[package]]
 name = "anstream"
-version = "0.6.21"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43d5b281e737544384e969a5ccad3f1cdd24b48086a0fc1b2a5262a26b8f4f4a"
+checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
 dependencies = [
  "anstyle",
  "anstyle-parse",
@@ -87,9 +87,9 @@ checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "anstyle-parse"
-version = "0.2.7"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7644824f0aa2c7b9384579234ef10eb7efb6a0deb83f9630a49594dd9c15c2"
+checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
 dependencies = [
  "utf8parse",
 ]
@@ -238,9 +238,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.60"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2797f34da339ce31042b27d23607e051786132987f595b02ba4f6a6dffb7030a"
+checksum = "1ddb117e43bbf7dacf0a4190fef4d345b9bad68dfc649cb349e7d17d28428e51"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -248,9 +248,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.60"
+version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24a241312cea5059b13574bb9b3861cabf758b879c15190b37b6d6fd63ab6876"
+checksum = "714a53001bf66416adb0e2ef5ac857140e7dc3a0c48fb28b2f10762fc4b5069f"
 dependencies = [
  "anstream",
  "anstyle",
@@ -260,9 +260,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.55"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a92793da1a46a5f2a02a6f4c46c6496b28c43638adea8306fcb0caa1634f24e5"
+checksum = "f2ce8604710f6733aa641a2b3731eaa1e8b3d9973d5e3565da11800813f997a9"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -480,26 +480,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
-name = "env_home"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
-
-[[package]]
-name = "errno"
-version = "0.3.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
-dependencies = [
- "libc",
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "extended"
@@ -766,12 +750,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linux-raw-sys"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
-
-[[package]]
 name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -904,9 +882,9 @@ dependencies = [
 
 [[package]]
 name = "notify-rust"
-version = "4.12.0"
+version = "4.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21af20a1b50be5ac5861f74af1a863da53a11c38684d9818d82f1c42f7fdc6c2"
+checksum = "3c8146c105ae33d744e2d645f684d063b01176a99daf5986556266777b428816"
 dependencies = [
  "dbus",
  "futures-lite",
@@ -1205,9 +1183,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.43"
+version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc74d9a594b72ae6656596548f56f667211f8a97b3d4c3d467150794690dc40a"
+checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
@@ -1260,9 +1238,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "rodio"
-version = "0.22.1"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0e2319f90472c9934314a93df9f7cf81d48cebb6e8b8536a1da7f4dc4a15125"
+checksum = "d0a536bb79db59098ef71a4dd4246c02eb87b316deceb1b68e0cde7167ec01eb"
 dependencies = [
  "cpal",
  "crossbeam-channel",
@@ -1289,19 +1267,6 @@ dependencies = [
  "primal-check",
  "strength_reduce",
  "transpose",
-]
-
-[[package]]
-name = "rustix"
-version = "1.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "146c9e247ccc180c1f61615433868c99f3de3ae256a30a43b49f67c2d9171f34"
-dependencies = [
- "bitflags",
- "errno",
- "libc",
- "linux-raw-sys",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1403,9 +1368,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "symphonia"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a85941e1de62270fff9c09918703dd4cdcf8509f2683b9b8f36b229006dfbc8"
+checksum = "b38c0b8e99ce52271da0f3fec5780a8566edd703b181211dd0ff725efeaaae38"
 dependencies = [
  "lazy_static",
  "symphonia-bundle-flac",
@@ -1426,9 +1391,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-bundle-flac"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ff6f2f3fce94460914b1d9f552db82db3017a59a02143d82e5100659bd85ed3"
+checksum = "e5674a2ace0e0976751253457ff05f4b0c1e15b18284c239c4804f3e0051eeab"
 dependencies = [
  "log",
  "symphonia-common",
@@ -1438,9 +1403,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-bundle-mp3"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae998661afd26776ccffeccbce9813dfcc5ab2ca93e184607a11db9ec66e0d8b"
+checksum = "08e64864167bd6cb39e743c19036cad4486ba4dcf299336b695249ea3cfd31ff"
 dependencies = [
  "lazy_static",
  "log",
@@ -1449,20 +1414,21 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-aac"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23378809c315d202721d469fcef480028dde8891a0f2e935ec07a3bc974ac9c4"
+checksum = "7139b6baf2f6df9877395d70bf16edc0860d72ff35eefbf51d083b10b36f7949"
 dependencies = [
  "lazy_static",
  "log",
+ "symphonia-common",
  "symphonia-core",
 ]
 
 [[package]]
 name = "symphonia-codec-adpcm"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "465719a22dbf52d306779eb8852d0914f9a632e3ddcc33318dc15afc14a89b99"
+checksum = "21b0a193955e491d9e372bd78f1bc809ea6dd3a2309d0311507f6fef9774411d"
 dependencies = [
  "log",
  "symphonia-core",
@@ -1470,9 +1436,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-alac"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a936b2eb138137d9d82c750aa07de1e5db169c91adea099a5545febcbca9dc6"
+checksum = "513b167e2d6569099699a2fa25303ada314f63bca966b3e4040ec50402a7b93b"
 dependencies = [
  "log",
  "symphonia-core",
@@ -1480,9 +1446,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-pcm"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31386721e6ae023d96b73c20f4e0acd88e47a8e02055b64498eb98aedfe4983e"
+checksum = "bb68786e3d630a87d160b039ac3564cf2338057c3a233ffd5fea9ba980c4d817"
 dependencies = [
  "log",
  "symphonia-core",
@@ -1490,9 +1456,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-codec-vorbis"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7b73c9b7c9c0580938593059d2eb82f0f3c9a35eecc5260c8332e16c5c1acb5"
+checksum = "d91ed3e7794fcdf4504442d35a7ab7a013d5233300e8044b218aa4c67c8b6919"
 dependencies = [
  "log",
  "symphonia-common",
@@ -1501,9 +1467,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-common"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b043d5bdb722fc9ccb81f1658342e2d2f0bf3cafd12df3af23b80e85d79f0731"
+checksum = "0c029b5a948c81fd3a46647a151b959109d1d16b05a1d7c7eca1fdac0ace0a27"
 dependencies = [
  "log",
  "symphonia-core",
@@ -1512,9 +1478,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-core"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d085a04fae2e73a2fb234d8cdd9d5025660534726388b73b4b3d2da8e3da7c"
+checksum = "3be2e760147497d7f939f18b7739387c7e6b5322d9ce0cf10cd93cf96f4d815c"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -1527,9 +1493,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-caf"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51c3069e9f59f8b364fb9758fc783c43b6282dc7954b9e9594c7156b8d33665d"
+checksum = "1ae7b54151f7dbdb2cd5c916ce7daca5250f010edcec945ef65e390958fd6695"
 dependencies = [
  "log",
  "symphonia-common",
@@ -1538,9 +1504,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-isomp4"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6bede3f9592b84f287ad42056c4ca54082db544db1fdfa19a8510b415d9f50e"
+checksum = "0a0c9c23912250e33b40c0d36deded5c03aef33299e03c39f78e6125d492da61"
 dependencies = [
  "log",
  "symphonia-common",
@@ -1550,9 +1516,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-mkv"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed433188248f222b53ba9c8d93fa5411de33ef7c1fa9264f30e199617d757346"
+checksum = "04c5a67ebba24eb54befad6c27015c4b763b1e90d66d5cf0b3f70c2341bb1527"
 dependencies = [
  "lazy_static",
  "log",
@@ -1562,9 +1528,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-ogg"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80258eabf34a4634465cb4cff5f27eaf89d1a84c9c175c6738f63a9e20477aaf"
+checksum = "5762fa508af3199f1b25c425aedbc3fcee2368162de9c9bf4d8394a87081d326"
 dependencies = [
  "log",
  "symphonia-common",
@@ -1574,9 +1540,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-format-riff"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf79a01a02e35bce79ae45699a4bbc94c70759e8937cb348b83cb7ee857d8048"
+checksum = "d1c7875a51b5046f33f13e881afc62f17ce25d5b4afb4fb19f6368fbc782a36f"
 dependencies = [
  "extended",
  "log",
@@ -1586,9 +1552,9 @@ dependencies = [
 
 [[package]]
 name = "symphonia-metadata"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2952577ed22ba321bd6721d1ff9e01f1a4a1ee72830240796cf7147552c8fed"
+checksum = "eea744eea37a3336aeb2919b5632a5b79dc12695e60cac15adf3422814c0f32c"
 dependencies = [
  "lazy_static",
  "log",
@@ -1599,9 +1565,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.114"
+version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4d107df263a3013ef9b1879b0df87d706ff80f65a86ea879bd9c31f9b307c2a"
+checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1876,13 +1842,11 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "8.0.0"
+version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3fabb953106c3c8eea8306e4393700d7657561cb43122571b172bbfb7c7ba1d"
+checksum = "81995fafaaaf6ae47a7d0cc83c67caf92aeb7e5331650ae6ff856f7c0c60c459"
 dependencies = [
- "env_home",
- "rustix",
- "winsafe",
+ "libc",
 ]
 
 [[package]]
@@ -2198,9 +2162,3 @@ checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 dependencies = [
  "memchr",
 ]
-
-[[package]]
-name = "winsafe"
-version = "0.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"

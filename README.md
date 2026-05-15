@@ -124,18 +124,6 @@ Build-time dependencies are:
 - DBus development files
 - `pkg-config`
 
-### Symphonia optimization
-Vibe uses the [Symphonia][`symphonia`] crate for audio stream 
-demultiplexing and decoding.
-Symphonia has optimization features that are off by default, you can switch them on 
-with the feature `symphonia/<optimization>`. These features are:
-
- - `opt-simd-sse`
- - `opt-simd-avx`
- - `opt-simd-neon`
-
-or you can switch them all on with `opt-simd`.
-
 ## Run-time Dependencies
 Vibe has zero run-time dependencies, all the stream
 demultiplexing and decoding is done natively thanks to 
@@ -145,7 +133,6 @@ amazing work!
 ## Support me
 Vibe runs on coffee!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V719WYF6)
-
 
 [`slimtcp`]: https://lyrion.org/reference/slimproto-protocol/
 [`lms`]: https://lyrion.org/

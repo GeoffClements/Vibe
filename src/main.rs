@@ -1,4 +1,5 @@
 use std::{
+    iter::repeat_n,
     net::{Ipv4Addr, SocketAddrV4, ToSocketAddrs},
     sync::{Arc, LazyLock, Mutex, RwLock},
     time::{Duration, Instant},
@@ -217,13 +218,16 @@ fn main() -> anyhow::Result<()> {
                 .for_each(|(i, (name, description))| {
                     println!("{}: {}", i, name);
                     if let Some(desc) = description {
-                        let spaces = String::from_iter(std::iter::repeat(" ").take(if i < 10 {
-                            3
-                        } else if i < 100 {
-                            4
-                        } else {
-                            5
-                        }));
+                        let spaces = String::from_iter(repeat_n(
+                            " ",
+                            if i < 10 {
+                                3
+                            } else if i < 100 {
+                                4
+                            } else {
+                                5
+                            },
+                        ));
                         println!("{}{}", spaces, desc);
                     }
                 });

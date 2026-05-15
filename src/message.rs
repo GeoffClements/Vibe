@@ -26,7 +26,7 @@ pub enum PlayerMsg {
     NotSupported,
     StreamEstablished,
     TrackStarted,
-    Decoder((decode::Decoder, StreamParams)),
+    Decoder((decode::VibeDecoder, StreamParams)),
 }
 
 #[allow(clippy::too_many_arguments)]

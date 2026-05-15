@@ -22,22 +22,22 @@ pub fn create_systemd_unit(
     audio_sys: &String,
     device: &Option<String>,
 ) -> anyhow::Result<()> {
-    let mut out_str = if let Some(server) = server {
-        SERVICE_FILE_TEXT.replace("{server}", &format!(" --server {}", server))
+    let mut out_str = if let Some(device) = device {
+        SERVICE_FILE_TEXT.replace("{device}", &format!(" --device \"{device}\""))
     } else {
-        SERVICE_FILE_TEXT.replace("{server}", "")
+        SERVICE_FILE_TEXT.replace("{device}", "")
+    };
+
+    out_str = out_str.replace("{audio_sys}", &format!(" --system \"{audio_sys}\""));
+
+    out_str = if let Some(server) = server {
+        out_str.replace("{server}", &format!(" --server \"{server}\""))
+    } else {
+        out_str.replace("{server}", "")
     };
 
     let path = which("vibe")?;
     out_str = out_str.replace("{path}", &path.to_string_lossy());
-
-    out_str = out_str.replace("{audio_sys}", &format!(" --system {}", audio_sys));
-
-    out_str = if let Some(device) = device {
-        out_str.replace("{device}", &format!(" --device {}", device))
-    } else {
-        out_str.replace("{device}", "")
-    };
 
     let config_dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?

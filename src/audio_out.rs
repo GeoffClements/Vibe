@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crossbeam::channel::Sender;
 
-use crate::{decode::Decoder, message::PlayerMsg, StreamParams};
+use crate::{decode::VibeDecoder, message::PlayerMsg, StreamParams};
 
 #[cfg(feature = "pipewire")]
 use crate::pipewire_out::PipewireAudioOutput;
@@ -14,7 +14,7 @@ use crate::rodio_out::RodioAudioOutput;
 pub trait AudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        decoder: Decoder,
+        decoder: VibeDecoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         device: &Option<String>,

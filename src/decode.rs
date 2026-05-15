@@ -5,10 +5,8 @@ use std::{
 };
 
 use anyhow::{bail, Context};
-#[cfg(not(feature = "pulse"))]
-use crossbeam::channel::Sender;
-#[cfg(feature = "pulse")]
-use crossbeam::channel::Sender;
+#[allow(unused_imports)]
+use crossbeam::{atomic::AtomicCell, channel::Sender};
 
 use slimproto::{
     buffer::SlimBuffer,
@@ -16,21 +14,14 @@ use slimproto::{
 };
 
 use symphonia::core::{
-    audio::{AudioBuffer, Signal},
-    codecs::{Decoder as SymDecoder, DecoderOptions},
-    conv::FromSample,
-    formats::FormatOptions,
+    codecs::{
+        audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions},
+        CodecParameters,
+    },
+    formats::{probe::Hint, FormatOptions, FormatReader, TrackType},
     io::{MediaSourceStream, ReadOnlySource},
     meta::MetadataOptions,
-    probe::{Hint, ProbeResult},
-    sample::SampleFormat,
 };
-
-#[cfg(any(feature = "pulse", feature = "pipewire"))]
-use symphonia::core::audio::{RawSample, RawSampleBuffer};
-
-#[cfg(feature = "rodio")]
-use symphonia::core::{audio::SampleBuffer, sample::Sample};
 
 #[cfg(feature = "notify")]
 use symphonia::core::meta::MetadataRevision;
@@ -39,7 +30,8 @@ use crate::{message::PlayerMsg, StreamParams, STATUS, VOLUME};
 
 #[derive(Debug)]
 pub enum DecoderError {
-    EndOfDecode,
+    // EndOfDecode,
+    // Unhandled,
     Retry,
     StreamError(symphonia::core::errors::Error),
 }
@@ -47,7 +39,7 @@ pub enum DecoderError {
 impl std::fmt::Display for DecoderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DecoderError::EndOfDecode => write!(f, "End of decode stream"),
+            // DecoderError::EndOfDecode => write!(f, "End of decode stream"),
             // DecoderError::Unhandled => write!(f, "Unhandled format"),
             DecoderError::Retry => write!(f, "Decoder reset required"),
             DecoderError::StreamError(e) => write!(f, "{}", e),
@@ -57,43 +49,24 @@ impl std::fmt::Display for DecoderError {
 
 impl std::error::Error for DecoderError {}
 
-#[derive(Clone, Copy)]
-pub enum AudioFormat {
-    F32,
-    I32,
-    U32,
-    I16,
-    U16,
-}
-
-impl From<SampleFormat> for AudioFormat {
-    fn from(value: SampleFormat) -> Self {
-        match value {
-            SampleFormat::U16 => AudioFormat::U16,
-            SampleFormat::S16 => AudioFormat::I16,
-            SampleFormat::U32 => AudioFormat::U32,
-            SampleFormat::S32 => AudioFormat::I32,
-            _ => AudioFormat::F32,
-        }
-    }
-}
-
 struct AudioSpec {
-    channels: u8,
+    channels: usize,
     sample_rate: u32,
-    #[allow(unused)]
-    format: AudioFormat,
 }
 
-pub struct Decoder {
-    pub probed: ProbeResult,
-    pub decoder: Box<dyn SymDecoder>,
+// Keep references to the Symphonia reader and decoder.
+// spec will be used to hold the number of channels and
+// sample rate from the server, or if self-describing,
+// the initial probe values. Used as a default.
+pub struct VibeDecoder {
+    pub reader: Box<dyn FormatReader + 'static>,
+    pub decoder: Box<dyn AudioDecoder>,
     spec: AudioSpec,
 }
 
-impl Decoder {
+impl VibeDecoder {
     pub fn try_new(
-        mss: MediaSourceStream,
+        mss: MediaSourceStream<'static>,
         format: slimproto::proto::Format,
         _pcmsamplesize: slimproto::proto::PcmSampleSize,
         pcmsamplerate: slimproto::proto::PcmSampleRate,
@@ -112,121 +85,143 @@ impl Decoder {
             }
         });
 
-        let probed = symphonia::default::get_probe()
-            .format(
+        let reader = symphonia::default::get_probe()
+            .probe(
                 &hint,
                 mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .context("Unrecognized container format")?;
 
-        let track = match probed.format.default_track() {
-            Some(track) => track,
-            None => {
-                bail!("Unable to find default track");
-            }
-        };
+        let track = reader
+            .default_track(TrackType::Audio)
+            .context("Unable to find default track")?;
 
-        let sample_format = match track.codec_params.sample_format {
-            Some(sample_format) => sample_format.into(),
-            None => AudioFormat::F32,
-        };
-
+        // Get sample rate and channel count from server, or if self-describing
+        // get the data from the probe, defaulting to popular values for audio
         let sample_rate = match pcmsamplerate {
             PcmSampleRate::Rate(rate) => rate,
-            PcmSampleRate::SelfDescribing => track.codec_params.sample_rate.unwrap_or(44100),
+            PcmSampleRate::SelfDescribing => match &track.codec_params {
+                Some(CodecParameters::Audio(AudioCodecParameters {
+                    sample_rate: Some(sample_rate),
+                    ..
+                })) => *sample_rate,
+                _ => 44100,
+            },
         };
 
         let channels = match pcmchannels {
-            PcmChannels::Mono => 1u8,
+            PcmChannels::Mono => 1,
             PcmChannels::Stereo => 2,
-            PcmChannels::SelfDescribing => match track.codec_params.channel_layout {
-                Some(symphonia::core::audio::Layout::Mono) => 1,
-                Some(symphonia::core::audio::Layout::Stereo) => 2,
-                None => match track.codec_params.channels {
-                    Some(channels) => channels.count() as u8,
-                    _ => 2,
-                },
+            PcmChannels::SelfDescribing => match &track.codec_params {
+                Some(CodecParameters::Audio(AudioCodecParameters {
+                    channels: Some(channels),
+                    ..
+                })) => channels.count(),
                 _ => 2,
             },
         };
 
         // Create a decoder for the track.
+        let audio_codec_params = match &track.codec_params {
+            Some(CodecParameters::Audio(audio_codec_params)) => audio_codec_params,
+            _ => bail!("Unable to extract audio parameters from stream"),
+        };
+
         let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
+            .make_audio_decoder(audio_codec_params, &AudioDecoderOptions::default())
             .context("Unable to find suitable decoder")?;
 
-        Ok(Decoder {
-            probed,
+        Ok(VibeDecoder {
+            reader,
             decoder,
             spec: AudioSpec {
                 channels,
                 sample_rate,
-                format: sample_format,
             },
         })
     }
 
-    pub fn channels(&self) -> u8 {
-        self.spec.channels
+    pub fn channels(&self) -> usize {
+        self.decoder
+            .codec_params()
+            .channels
+            .as_ref()
+            .map(|c| c.count())
+            .unwrap_or(self.spec.channels)
     }
 
     pub fn sample_rate(&self) -> u32 {
-        self.spec.sample_rate
+        self.decoder
+            .codec_params()
+            .sample_rate
+            .unwrap_or(self.spec.sample_rate)
     }
 
-    fn get_audio_buffer(&mut self) -> Result<AudioBuffer<f32>, DecoderError> {
-        let decoded = loop {
-            let packet = self.probed.format.next_packet().map_err(|err| match err {
-                symphonia::core::errors::Error::IoError(err)
-                    if err.kind() == std::io::ErrorKind::UnexpectedEof
-                        && err.to_string() == "end of stream" =>
-                {
-                    DecoderError::EndOfDecode
-                }
-                symphonia::core::errors::Error::ResetRequired => {
-                    self.decoder.reset();
-                    DecoderError::Retry
-                }
-                error => DecoderError::StreamError(error),
-            })?;
-
-            match self.decoder.decode(&packet) {
-                Ok(decoded) => break decoded,
-                Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-                Err(e) => return Err(DecoderError::StreamError(e)),
+    fn get_audio_buffer(&mut self) -> Result<Option<Vec<f32>>, DecoderError> {
+        let packet = self.reader.next_packet().map_err(|err| match err {
+            // Convert a Symphonia ResetRquired to our Retry
+            symphonia::core::errors::Error::ResetRequired => {
+                self.decoder.reset();
+                DecoderError::Retry
             }
+
+            // Wrap all other Symphonia errors in our StreamError
+            err => DecoderError::StreamError(err),
+        })?;
+
+        let decoded = packet.map(|packet| {
+            self.decoder
+                .decode(&packet)
+                .map_err(DecoderError::StreamError)
+        });
+
+        let decoded = match decoded {
+            Some(Ok(decoded)) => Some(decoded),
+            Some(Err(err)) => return Err(err),
+            None => return Ok(None),
         };
 
-        let vol = VOLUME.lock().map(|v| v[0]).unwrap_or(0.5);
+        let audio_buffer = decoded.map(|decoded| {
+            let (left_volume, right_volume) = VOLUME
+                .lock()
+                .map(|vol| (vol[0], vol[1]))
+                .unwrap_or((0.5, 0.5));
 
-        let mut audio_buffer = decoded.make_equivalent();
-        decoded.convert::<f32>(&mut audio_buffer);
-        audio_buffer.transform(|s| s * vol);
+            let mut audio_buffer = Vec::new(); // copy_to_vec_interleaved will resize this as needed
+            decoded.copy_to_vec_interleaved(&mut audio_buffer);
+            audio_buffer.chunks_exact_mut(2).for_each(|frame| {
+                if let [l, r] = frame {
+                    *l *= left_volume;
+                    *r *= right_volume;
+                }
+            });
+            audio_buffer
+        });
+
         Ok(audio_buffer)
     }
 
     #[cfg(feature = "rodio")]
-    pub fn fill_sample_buffer<T>(
+    pub fn fill_sample_buffer(
         &mut self,
-        buffer: &mut Vec<T>,
+        buffer: &mut Vec<f32>,
         limit: Option<usize>,
-    ) -> Result<(), DecoderError>
-    where
-        T: Sample + FromSample<f32>,
-    {
-        let limit = limit.unwrap_or_else(|| buffer.capacity().max(1024));
+    ) -> Result<bool, DecoderError> {
+        let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
+        let mut end_of_decode = false;
 
-        while buffer.len() < limit {
+        while buffer.len() < limit && !end_of_decode {
             let audio_buffer = self.get_audio_buffer()?;
-            let mut sample_buffer =
-                SampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-            sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
-            buffer.extend_from_slice(sample_buffer.samples());
+            if let Some(audio_buffer) = audio_buffer {
+                buffer.extend(audio_buffer);
+            } else {
+                end_of_decode = true;
+            }
         }
 
-        Ok(())
+        Ok(end_of_decode)
     }
 
     #[cfg(any(feature = "pulse", feature = "pipewire"))]
@@ -234,66 +229,53 @@ impl Decoder {
         &mut self,
         buffer: &mut Vec<u8>,
         limit: Option<usize>,
-    ) -> Result<(), DecoderError> {
+    ) -> Result<bool, DecoderError> {
         let limit = limit.unwrap_or_else(|| (buffer.capacity() / 2).max(1024));
+        let mut end_of_decode = false;
 
-        while buffer.len() < limit {
-            let audio_buffer = self.get_audio_buffer()?;
+        // Safe Rust conversion of Vec<f32> to &[u8] with allocations
+        // while buffer.len() < limit && !end_of_decode {
+        //     let buf = self.get_audio_buffer()?;
+        //     if let Some(buf) = buf {
+        //         let audio_buffer: Vec<_> = buf.iter().flat_map(|s| s.to_le_bytes()).collect();
+        //         buffer.extend_from_slice(&audio_buffer[..]);
+        //     } else {
+        //         end_of_decode = true;
+        //     }
+        // }
 
-            match self.spec.format {
-                AudioFormat::F32 => {
-                    self.audio_to_raw::<f32>(audio_buffer, buffer);
-                }
-
-                AudioFormat::I32 | AudioFormat::U32 => {
-                    self.audio_to_raw::<i32>(audio_buffer, buffer)
-                }
-
-                AudioFormat::I16 | AudioFormat::U16 => {
-                    self.audio_to_raw::<i16>(audio_buffer, buffer);
-                }
+        // Unsafe Rust conversion of Vec<f32> to &[u8] without allocations
+        while buffer.len() < limit && !end_of_decode {
+            let buf = self.get_audio_buffer()?;
+            if let Some(buf) = buf {
+                let audio_buffer = unsafe {
+                    // In place conversion
+                    // Safe because u8 is byte-aligned
+                    std::slice::from_raw_parts(buf.as_ptr() as _, buf.len() * size_of::<f32>())
+                };
+                buffer.extend(audio_buffer);
+            } else {
+                end_of_decode = true
             };
         }
-        Ok(())
-    }
 
-    #[cfg(any(feature = "pulse", feature = "pipewire"))]
-    fn audio_to_raw<T>(&self, audio_buffer: AudioBuffer<f32>, buffer: &mut Vec<u8>)
-    where
-        T: RawSample + FromSample<f32>,
-    {
-        let mut raw_sample_buffer =
-            RawSampleBuffer::<T>::new(audio_buffer.capacity() as u64, *audio_buffer.spec());
-        raw_sample_buffer.copy_interleaved_typed::<f32>(&audio_buffer);
-        buffer.extend_from_slice(raw_sample_buffer.as_bytes());
+        Ok(end_of_decode)
     }
 
     #[cfg(feature = "notify")]
     pub fn metadata(&mut self) -> Option<MetadataRevision> {
-        self.probed
-            .format
-            .metadata()
-            .current()
-            .cloned()
-            .or_else(|| {
-                self.probed
-                    .metadata
-                    .get()
-                    .as_ref()
-                    .and_then(|m| m.current().cloned())
-            })
+        self.reader.metadata().skip_to_latest().cloned()
     }
 
     #[allow(unused)]
     pub fn samples_to_dur(&self, samples: u64) -> Duration {
         Duration::from_millis(
-            samples * 1_000 / (self.spec.sample_rate as u64 * self.spec.channels as u64),
+            samples * 1_000 / (self.sample_rate() as u64 * self.channels() as u64),
         )
     }
 
     pub fn dur_to_samples(&self, dur: Duration) -> u64 {
-        self.spec.sample_rate as u64 * self.spec.channels as u64 * dur.as_micros() as u64
-            / 1_000_000
+        self.sample_rate() as u64 * self.channels() as u64 * dur.as_micros() as u64 / 1_000_000
     }
 }
 
@@ -311,7 +293,7 @@ pub fn make_decoder(
     pcmchannels: slimproto::proto::PcmChannels,
     autostart: slimproto::proto::AutoStart,
     output_threshold: Duration,
-) -> anyhow::Result<(Decoder, StreamParams)> {
+) -> anyhow::Result<(VibeDecoder, StreamParams)> {
     let ip = if server_ip.is_unspecified() {
         default_ip
     } else {
@@ -338,7 +320,7 @@ pub fn make_decoder(
         loop {
             line.clear();
             let bytes_read = data_stream.read_line(&mut line)?;
-            if bytes_read == 0 || line == "\r\n" {
+            if bytes_read == 0 || line == "\r\n" || line.len() > 8 * 1024 {
                 break;
             }
         }
@@ -350,7 +332,7 @@ pub fn make_decoder(
     );
 
     Ok((
-        Decoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
+        VibeDecoder::try_new(mss, format, pcmsamplesize, pcmsamplerate, pcmchannels)?,
         StreamParams {
             autostart,
             output_threshold,

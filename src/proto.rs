@@ -87,8 +87,14 @@ pub fn run(
                                     ip_address: ip,
                                     sync_group_id: sgid,
                                 } => {
+                                    // Drop any obviously incorrect addresses
+                                    if ip.is_unspecified() || ip.is_broadcast() || ip.is_multicast()
+                                    {
+                                        continue;
+                                    }
+                                    
+                                    // Now inform the main thread,
                                     server = (ip, sgid).into();
-                                    // Now inform the main thread
                                     _ = slim_rx_in.send(Some(ServerMessage::Serv {
                                         ip_address: ip,
                                         sync_group_id: None,

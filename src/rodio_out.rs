@@ -17,7 +17,7 @@ use slimproto::proto::AutoStart;
 
 use crate::{
     audio_out::AudioOutput,
-    decode::{Decoder, DecoderError},
+    decode::{VibeDecoder, DecoderError},
     message::PlayerMsg,
     StreamParams, SKIP,
 };
@@ -25,7 +25,7 @@ use crate::{
 const MIN_AUDIO_BUFFER_SIZE: usize = 4 * 1024;
 
 pub struct DecoderSource {
-    decoder: Decoder,
+    decoder: VibeDecoder,
     frame: VecDeque<f32>,
     stream_in: Sender<PlayerMsg>,
     start_flag: bool,
@@ -33,7 +33,7 @@ pub struct DecoderSource {
 }
 
 impl DecoderSource {
-    fn new(decoder: Decoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
+    fn new(decoder: VibeDecoder, capacity: usize, stream_in: Sender<PlayerMsg>) -> Self {
         DecoderSource {
             decoder,
             frame: VecDeque::with_capacity(capacity),
@@ -78,29 +78,23 @@ impl Iterator for DecoderSource {
             let mut audio_buf = Vec::<f32>::with_capacity(self.frame.capacity());
             let mut skip = SKIP.take();
 
-            loop {
-                match self
+            self.eod_flag = loop {
+                let eod = match self
                     .decoder
                     .fill_sample_buffer(&mut audio_buf, Some(2 * MIN_AUDIO_BUFFER_SIZE))
                 {
-                    Ok(()) => {}
-
-                    Err(DecoderError::EndOfDecode) => {
-                        if !self.eod_flag {
-                            _ = self.stream_in.send(PlayerMsg::EndOfDecode);
-                            self.eod_flag = true;
-                        }
-                    }
+                    Ok(eod) => eod,
 
                     Err(DecoderError::StreamError(e)) => {
                         warn!("Error reading data stream: {}", e);
                         _ = self.stream_in.send(PlayerMsg::NotSupported);
+                        true
                     }
 
                     Err(DecoderError::Retry) => {
                         continue;
                     }
-                }
+                };
 
                 if skip > Duration::ZERO {
                     let samples_to_skip =
@@ -116,7 +110,11 @@ impl Iterator for DecoderSource {
                     self.frame.extend(audio_buf);
                 }
 
-                break;
+                break eod;
+            };
+
+            if self.eod_flag {
+                _ = self.stream_in.send(PlayerMsg::EndOfDecode);
             }
         }
 
@@ -192,7 +190,7 @@ impl RodioAudioOutput {
 impl AudioOutput for RodioAudioOutput {
     fn enqueue_new_stream(
         &mut self,
-        decoder: Decoder,
+        decoder: VibeDecoder,
         stream_in: Sender<PlayerMsg>,
         stream_params: StreamParams,
         _device: &Option<String>,

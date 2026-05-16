@@ -1,5 +1,6 @@
 use std::fs::{create_dir_all, write};
 
+use cfg_if::cfg_if;
 use which::which;
 
 const SERVICE_FILE_TEXT: &str = r#"[Unit]
@@ -19,6 +20,7 @@ const SERVICE_FILE_NAME: &str = "vibe.service";
 
 pub fn create_systemd_unit(
     server: &Option<String>,
+    #[allow(unused)]
     audio_sys: &String,
     device: &Option<String>,
 ) -> anyhow::Result<()> {
@@ -28,7 +30,17 @@ pub fn create_systemd_unit(
         SERVICE_FILE_TEXT.replace("{device}", "")
     };
 
-    out_str = out_str.replace("{audio_sys}", &format!(" --system \"{audio_sys}\""));
+    cfg_if! {
+        if #[cfg(any(
+            all(feature = "pulse", feature = "rodio"),
+            all(feature = "pulse", feature = "pipewire"),
+            all(feature = "rodio", feature = "pipewire")
+        ))] {
+            out_str = out_str.replace("{audio_sys}", &format!(" --system \"{audio_sys}\""));
+        } else {
+            out_str = out_str.replace("{audio_sys}", "");
+        }
+    }
 
     out_str = if let Some(server) = server {
         out_str.replace("{server}", &format!(" --server \"{server}\""))

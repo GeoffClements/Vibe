@@ -73,10 +73,7 @@ simple_logger = { version = "5.2.0", default-features = false, features = [
   "stderr",
 ] }
 slimproto = "0.1.25"
-symphonia = { version = "0.6.0", features = [
-  "all-codecs",
-  "all-formats",
-] }
+symphonia = { version = "0.6.0", features = ["all"] }
 which = "8.0.2"
 
 [features]
